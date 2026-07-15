@@ -7,6 +7,8 @@ from topology_transitions.edge_flows import (
     build_continuations,
     discover_edge_flows,
     neighboring_flows,
+    parallel_neighboring_flows,
+    quad_strip_faces,
 )
 
 
@@ -90,6 +92,27 @@ class EdgeFlowTests(unittest.TestCase):
         self.assertEqual(len(scoped), 1)
         self.assertEqual(set(scoped[0].edge_ids), selected)
         self.assertEqual(scoped[0].edge_count, 2)
+
+    def test_side_to_side_order_groups_parallel_quad_strips(self):
+        topology = rectangular_grid(4, 3)
+        flows = discover_edge_flows(
+            topology,
+            mode="TOPOLOGY",
+            minimum_edges=2,
+            sort="SIDE_TO_SIDE",
+        )
+        neighbors = parallel_neighboring_flows(flows, topology.face_edges)
+        strips = quad_strip_faces(flows, topology.face_edges)
+        self.assertEqual([flow.edge_count for flow in flows], [3, 3, 3, 4, 4])
+        self.assertEqual(
+            sorted(len(faces) for faces in strips.values()), [6, 6, 6, 8, 8]
+        )
+        breaks = [
+            index
+            for index in range(len(flows) - 1)
+            if index + 1 not in neighbors[index]
+        ]
+        self.assertEqual(breaks, [2])
 
     def test_geometric_mode_pairs_through_extraordinary_vertex(self):
         topology = MeshFlowTopology(

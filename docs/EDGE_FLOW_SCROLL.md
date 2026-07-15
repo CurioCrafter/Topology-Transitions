@@ -1,18 +1,21 @@
 # Edge Flow Scroll
 
-Edge Flow Scroll is an Edit Mode inspector for understanding how edge chains cross an all-quad mesh, where they form closed loops, and where they terminate at boundaries or extraordinary vertices.
+Edge Flow Scroll is an Edit Mode inspector for understanding how complete quad strips cross an all-quad mesh, how parallel strips line up from one side to the other, and where their center edge chains terminate.
 
-![A closed loop and its neighboring flows on a torus](images/03-edge-flow-scroll.png)
+![A filled quad strip and its parallel neighbors on a torus](images/03-edge-flow-scroll.png)
 
 ## Reading the overlay
 
 | Color | Meaning |
 | --- | --- |
-| Orange | Current flow. |
-| Cyan | Neighboring flows that share one or more faces with the current flow. |
+| Translucent orange faces | Full quad strip adjoining the current flow. |
+| Strong orange line | Center edge chain retained for precise topology reading. |
+| Cyan | Parallel flows one quad away across opposite edges of a quad. |
 | Magenta | Endpoint at a boundary, pole, or other non-continuing vertex. |
 
-The HUD and sidebar show the current/total flow number, edge count, world-space length, average directional alignment, open or closed state, endpoint labels, and neighboring-flow count.
+The HUD and sidebar show the current/total flow number, edge and strip-face counts, world-space length, average directional alignment, open or closed state, endpoint labels, and parallel-neighbor count.
+
+With **Side to Side** ordering, opposite edges across quads form a parallel-family graph. The browser completes one adjacent family before moving to a different orientation or disconnected part of the mesh, eliminating the old length/index jumps between unrelated flows.
 
 ![A three-edge flow terminating at an N-pole](images/04-flow-termination.png)
 
@@ -32,7 +35,7 @@ At each vertex, candidate edges are paired by straightest continuation. This can
 - **Selected Edges** restricts discovery to the current selected-edge subgraph.
 - **Minimum Edges** removes short fragments from the browser.
 - **Pair Threshold** prevents continuation between edge pairs below the chosen straightness.
-- **Order** sorts by longest, smoothest, or stable mesh index.
+- **Order** traverses side-to-side by default, or sorts by longest, smoothest, or stable mesh index.
 
 Closed flows are canonicalized to a stable starting edge and direction. Open flows retain endpoint classifications such as `Boundary (v3)` or `N-pole (v3)`.
 
@@ -40,16 +43,23 @@ Closed flows are canonicalized to a stable starting edge and direction. Open flo
 
 | Input | Action |
 | --- | --- |
-| Wheel / Left / Right / Up / Down | Browse flows. |
+| Wheel / Left / Right / Up / Down | Browse and frame the next/previous quad strip. |
 | Home / End | Jump to first / last flow. |
-| Enter | Select the current flow and finish. |
-| S | Select the current flow and continue browsing. |
-| N | Toggle neighboring-flow overlay. |
+| Enter | Select the full current quad strip and finish. |
+| S | Select the full strip and continue browsing. |
+| F | Toggle automatic viewport centering and framing. |
+| N | Toggle parallel-neighbor overlay. |
 | Middle mouse | Pass viewport navigation through to Blender. |
 | Esc / right-click | Cancel and restore the selection from before the inspector started. |
 
 The non-modal **Previous**, **Refresh**, and **Next** buttons use the same discovery engine when stepping without a wheel session is preferable.
 
+## Example plane
+
+Use **Add 5 to 3 Example Plane** in Object Mode to create a portrait reference mesh at the 3D Cursor. It contains 56 quads, colored topology bands, four N-poles, and two E-poles, and is ready for the flow inspector after entering Edit Mode.
+
+![The generated example plane with its active quad strip](images/05-example-plane-strip.png)
+
 ## Topology changes while browsing
 
-The inspector is intentionally read-only until selection is confirmed. If vertex or edge counts change while it is active, the session cancels and asks for a refresh instead of drawing stale indices against a changed BMesh.
+The inspector leaves mesh data and selection untouched until a strip is confirmed; view framing is the only default interaction. If vertex or edge counts change while it is active, the session cancels and asks for a refresh instead of drawing stale indices against a changed BMesh.

@@ -39,13 +39,21 @@ class QT_PT_sidebar(Panel):
 
     @classmethod
     def poll(cls, context):
-        return (
-            context.active_object is not None and context.active_object.type == "MESH"
-        )
+        return True
 
     def draw(self, context):
         layout = self.layout
         settings = context.scene.topology_transitions
+
+        example = layout.box()
+        example.label(text="Example Mesh")
+        example.operator(
+            "object.quad_transition_add_example_plane",
+            text="Add 5 to 3 Example Plane",
+            icon="MESH_GRID",
+        )
+        if context.mode != "OBJECT":
+            example.label(text="Switch to Object Mode to add it", icon="INFO")
 
         selection = layout.box()
         selection.label(text="1. Select a rectangular quad patch")
@@ -101,7 +109,9 @@ class QT_PT_sidebar(Panel):
         row.prop(settings, "flow_min_edges")
         if settings.flow_mode == "GEOMETRIC":
             flow.prop(settings, "flow_min_alignment")
-        flow.prop(settings, "flow_show_neighbors")
+        row = flow.row(align=True)
+        row.prop(settings, "flow_focus_view")
+        row.prop(settings, "flow_show_neighbors")
 
         row = flow.row(align=True)
         previous = row.operator(
@@ -126,7 +136,8 @@ class QT_PT_sidebar(Panel):
             metrics = flow.column(align=True)
             metrics.label(
                 text=f"Flow {settings.flow_index + 1} / {settings.flow_count}  •  "
-                f"{settings.flow_edge_count} edges"
+                f"{settings.flow_edge_count} edges  •  "
+                f"{settings.flow_quad_count} quads"
             )
             metrics.label(
                 text=f"Length {settings.flow_length:.3f}  •  "
@@ -138,7 +149,7 @@ class QT_PT_sidebar(Panel):
                 metrics.label(
                     text=f"{settings.flow_start_label} → {settings.flow_end_label}"
                 )
-            metrics.label(text=f"{settings.flow_neighbor_count} neighboring flows")
+            metrics.label(text=f"{settings.flow_neighbor_count} parallel neighbors")
 
         note = layout.column(align=True)
         note.label(text="Boundary vertices are always pinned.")

@@ -32,7 +32,9 @@ def parse_args() -> argparse.Namespace:
     arguments = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--shot", choices=("before", "after", "flow", "pole"), required=True
+        "--shot",
+        choices=("before", "after", "flow", "pole", "example"),
+        required=True,
     )
     parser.add_argument("--output-dir", type=Path)
     return parser.parse_args(arguments)
@@ -50,6 +52,7 @@ OUTPUT_NAMES = {
     "after": "TopologyTransitions-02-five-to-three-result.png",
     "flow": "TopologyTransitions-03-edge-flow-scroll.png",
     "pole": "TopologyTransitions-04-flow-termination.png",
+    "example": "TopologyTransitions-05-example-plane-strip.png",
 }
 
 
@@ -244,9 +247,10 @@ def setup_torus_flow() -> None:
     settings = bpy.context.scene.topology_transitions
     settings.flow_mode = "TOPOLOGY"
     settings.flow_scope = "ALL"
-    settings.flow_sort = "LONGEST"
+    settings.flow_sort = "SIDE_TO_SIDE"
     settings.flow_min_edges = 4
     settings.flow_show_neighbors = True
+    settings.flow_focus_view = True
     settings.flow_index = 0
 
 
@@ -254,7 +258,7 @@ def setup_pole_flow() -> None:
     setup_transition(
         apply=True,
         title="EDGE FLOW TERMINATES AT AN N-POLE",
-        subtitle="MAGENTA ENDPOINT  •  CYAN NEIGHBORING FLOWS",
+        subtitle="MAGENTA ENDPOINT  •  CYAN PARALLEL FLOWS",
     )
     bm = bmesh.from_edit_mesh(bpy.context.edit_object.data)
     for vertex in bm.verts:
@@ -271,9 +275,10 @@ def setup_pole_flow() -> None:
     settings = bpy.context.scene.topology_transitions
     settings.flow_mode = "TOPOLOGY"
     settings.flow_scope = "ALL"
-    settings.flow_sort = "LONGEST"
+    settings.flow_sort = "SIDE_TO_SIDE"
     settings.flow_min_edges = 1
     settings.flow_show_neighbors = True
+    settings.flow_focus_view = True
     session = build_flow_session(bpy.context)
     candidates = [
         index
@@ -288,6 +293,41 @@ def setup_pole_flow() -> None:
     )
 
 
+def setup_example_flow() -> None:
+    clear_scene()
+    result = bpy.ops.object.quad_transition_add_example_plane()
+    if result != {"FINISHED"}:
+        raise RuntimeError(f"Example plane screenshot setup returned {result}")
+    bpy.ops.object.mode_set(mode="EDIT")
+    bm = bmesh.from_edit_mesh(bpy.context.edit_object.data)
+    for vertex in bm.verts:
+        vertex.select_set(False)
+    for edge in bm.edges:
+        edge.select_set(False)
+    for face in bm.faces:
+        face.select_set(False)
+    bmesh.update_edit_mesh(
+        bpy.context.edit_object.data,
+        loop_triangles=False,
+        destructive=False,
+    )
+    settings = bpy.context.scene.topology_transitions
+    settings.flow_mode = "TOPOLOGY"
+    settings.flow_scope = "ALL"
+    settings.flow_sort = "SIDE_TO_SIDE"
+    settings.flow_min_edges = 2
+    settings.flow_show_neighbors = True
+    settings.flow_focus_view = True
+    session = build_flow_session(bpy.context)
+    settings.flow_index = max(
+        range(len(session.flows)),
+        key=lambda index: (
+            session.flows[index].edge_count,
+            len(session.quad_faces[index]),
+        ),
+    )
+
+
 def invoke_flow(area, region) -> None:
     window = bpy.context.window_manager.windows[0]
     with bpy.context.temp_override(
@@ -296,7 +336,10 @@ def invoke_flow(area, region) -> None:
         area=area,
         region=region,
     ):
-        result = bpy.ops.mesh.quad_transition_edge_flow_scroll("INVOKE_DEFAULT")
+        result = bpy.ops.mesh.quad_transition_edge_flow_scroll(
+            "INVOKE_DEFAULT",
+            start_index=bpy.context.scene.topology_transitions.flow_index,
+        )
     if result != {"RUNNING_MODAL"}:
         raise RuntimeError(f"Flow screenshot setup returned {result}")
 
@@ -347,8 +390,12 @@ def setup() -> float:
         setup_torus_flow()
         _window, _screen, area, region = configure_view(top=False)
         invoke_flow(area, region)
-    else:
+    elif ARGS.shot == "pole":
         setup_pole_flow()
+        _window, _screen, area, region = configure_view(top=True)
+        invoke_flow(area, region)
+    else:
+        setup_example_flow()
         _window, _screen, area, region = configure_view(top=True)
         invoke_flow(area, region)
     bpy.app.timers.register(lambda: guarded(capture), first_interval=0.8)

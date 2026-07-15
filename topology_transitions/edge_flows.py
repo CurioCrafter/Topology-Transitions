@@ -8,6 +8,7 @@ therefore visualize likely continuation through extraordinary vertices.
 
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from itertools import combinations
@@ -309,7 +310,7 @@ def discover_edge_flows(
     mode: str = "TOPOLOGY",
     minimum_edges: int = 1,
     minimum_alignment: float = 0.15,
-    sort: str = "LONGEST",
+    sort: str = "SIDE_TO_SIDE",
 ) -> list[EdgeFlow]:
     """Return every maximal flow that passes the requested minimum size."""
 
@@ -346,7 +347,9 @@ def discover_edge_flows(
             )
         )
 
-    if sort == "LONGEST":
+    if sort == "SIDE_TO_SIDE":
+        flows = order_flows_side_to_side(flows, topology.face_edges)
+    elif sort == "LONGEST":
         flows.sort(
             key=lambda flow: (
                 -flow.edge_count,
@@ -367,6 +370,142 @@ def discover_edge_flows(
     else:
         raise ValueError(f"Unknown edge-flow sort: {sort}")
     return flows
+
+
+def quad_strip_faces(
+    flows: Sequence[EdgeFlow], face_edges: Mapping[int, Sequence[int]]
+) -> dict[int, set[int]]:
+    """Return the quad faces directly adjoining each edge flow."""
+
+    edge_to_flow = {
+        edge_id: flow_index
+        for flow_index, flow in enumerate(flows)
+        for edge_id in flow.edge_ids
+    }
+    strips = {index: set() for index in range(len(flows))}
+    for face_id, edge_ids in face_edges.items():
+        if len(edge_ids) != 4:
+            continue
+        for flow_index in {
+            edge_to_flow[edge_id] for edge_id in edge_ids if edge_id in edge_to_flow
+        }:
+            strips[flow_index].add(face_id)
+    return strips
+
+
+def parallel_neighboring_flows(
+    flows: Sequence[EdgeFlow], face_edges: Mapping[int, Sequence[int]]
+) -> dict[int, set[int]]:
+    """Find flows separated by one quad, using opposite face edges."""
+
+    edge_to_flow = {
+        edge_id: flow_index
+        for flow_index, flow in enumerate(flows)
+        for edge_id in flow.edge_ids
+    }
+    neighbors = {index: set() for index in range(len(flows))}
+    for edge_ids in face_edges.values():
+        if len(edge_ids) != 4:
+            continue
+        for first_edge, second_edge in (
+            (edge_ids[0], edge_ids[2]),
+            (edge_ids[1], edge_ids[3]),
+        ):
+            first = edge_to_flow.get(first_edge)
+            second = edge_to_flow.get(second_edge)
+            if first is None or second is None or first == second:
+                continue
+            neighbors[first].add(second)
+            neighbors[second].add(first)
+    return neighbors
+
+
+def _graph_component(
+    start: int, neighbors: Mapping[int, set[int]], remaining: set[int]
+) -> set[int]:
+    pending = [start]
+    component: set[int] = set()
+    while pending:
+        current = pending.pop()
+        if current in component:
+            continue
+        component.add(current)
+        pending.extend(neighbors[current] - component)
+    remaining -= component
+    return component
+
+
+def _nearest_unvisited(
+    start: int,
+    unvisited: set[int],
+    component: set[int],
+    neighbors: Mapping[int, set[int]],
+    flow_key,
+) -> int:
+    pending = deque([(start, 0)])
+    seen = {start}
+    candidates: list[tuple[int, tuple[int, int], int]] = []
+    while pending:
+        current, distance = pending.popleft()
+        if current in unvisited:
+            candidates.append((distance, flow_key(current), current))
+            continue
+        for following in sorted(neighbors[current] & component, key=flow_key):
+            if following not in seen:
+                seen.add(following)
+                pending.append((following, distance + 1))
+    if not candidates:
+        return min(unvisited, key=flow_key)
+    return min(candidates)[2]
+
+
+def order_flows_side_to_side(
+    flows: Sequence[EdgeFlow], face_edges: Mapping[int, Sequence[int]]
+) -> list[EdgeFlow]:
+    """Group parallel flow families and walk each from one side to the other."""
+
+    if not flows:
+        return []
+    neighbors = parallel_neighboring_flows(flows, face_edges)
+
+    def flow_key(index: int) -> tuple[int, int]:
+        return (min(flows[index].edge_ids), index)
+
+    remaining = set(range(len(flows)))
+    components: list[set[int]] = []
+    while remaining:
+        components.append(
+            _graph_component(min(remaining, key=flow_key), neighbors, remaining)
+        )
+    components.sort(
+        key=lambda component: (
+            -len(component),
+            min(flow_key(index) for index in component),
+        )
+    )
+
+    ordered_indices: list[int] = []
+    for component in components:
+        endpoints = [
+            index for index in component if len(neighbors[index] & component) <= 1
+        ]
+        current = min(endpoints or component, key=flow_key)
+        unvisited = set(component)
+        while unvisited:
+            ordered_indices.append(current)
+            unvisited.remove(current)
+            adjacent = neighbors[current] & unvisited
+            if adjacent:
+                current = min(adjacent, key=flow_key)
+            elif unvisited:
+                current = _nearest_unvisited(
+                    current,
+                    unvisited,
+                    component,
+                    neighbors,
+                    flow_key,
+                )
+    return [flows[index] for index in ordered_indices]
 
 
 def neighboring_flows(

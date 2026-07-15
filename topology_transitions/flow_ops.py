@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import sqrt
 from typing import Any
 
 import blf
@@ -17,7 +18,8 @@ from .edge_flows import (
     EdgeFlow,
     MeshFlowTopology,
     discover_edge_flows,
-    neighboring_flows,
+    parallel_neighboring_flows,
+    quad_strip_faces,
 )
 
 
@@ -27,10 +29,15 @@ class EdgeFlowError(ValueError):
 
 @dataclass
 class FlowSession:
+    object_name: str
     topology: MeshFlowTopology
     flows: list[EdgeFlow]
     neighbors: dict[int, set[int]]
+    quad_faces: dict[int, set[int]]
+    face_vertices: dict[int, tuple[int, ...]]
+    face_normals: dict[int, tuple[float, float, float]]
     world_positions: dict[int, tuple[float, float, float]]
+    overlay_offset: float
     mesh_signature: tuple[int, int, int]
 
 
@@ -40,13 +47,20 @@ def _mesh_signature(bm: Any) -> tuple[int, int, int]:
 
 def _topology_from_bmesh(
     bm: Any, obj: Any
-) -> tuple[MeshFlowTopology, dict[int, tuple[float, float, float]]]:
+) -> tuple[
+    MeshFlowTopology,
+    dict[int, tuple[float, float, float]],
+    dict[int, tuple[int, ...]],
+    dict[int, tuple[float, float, float]],
+    float,
+]:
     bm.verts.ensure_lookup_table()
     bm.edges.ensure_lookup_table()
     bm.faces.ensure_lookup_table()
     bm.verts.index_update()
     bm.edges.index_update()
     bm.faces.index_update()
+    bm.normal_update()
 
     world_positions = {
         vertex.index: tuple(obj.matrix_world @ vertex.co) for vertex in bm.verts
@@ -68,7 +82,28 @@ def _topology_from_bmesh(
         },
         positions=world_positions,
     )
-    return topology, world_positions
+    face_vertices = {
+        face.index: tuple(vertex.index for vertex in face.verts) for face in bm.faces
+    }
+    normal_matrix = obj.matrix_world.to_3x3().inverted_safe().transposed()
+    face_normals = {}
+    for face in bm.faces:
+        normal = normal_matrix @ face.normal
+        if normal.length_squared:
+            normal.normalize()
+        face_normals[face.index] = tuple(normal)
+    edge_lengths = sorted(
+        sqrt(
+            sum(
+                (world_positions[second][axis] - world_positions[first][axis]) ** 2
+                for axis in range(3)
+            )
+        )
+        for first, second in topology.edge_vertices.values()
+    )
+    typical_edge_length = edge_lengths[len(edge_lengths) // 2] if edge_lengths else 0.0
+    overlay_offset = max(typical_edge_length * 0.005, 1.0e-7)
+    return topology, world_positions, face_vertices, face_normals, overlay_offset
 
 
 def build_flow_session(context: Any) -> FlowSession:
@@ -79,7 +114,9 @@ def build_flow_session(context: Any) -> FlowSession:
         raise EdgeFlowError("Inspect one mesh data-block at a time")
     settings = context.scene.topology_transitions
     bm = bmesh.from_edit_mesh(obj.data)
-    topology, world_positions = _topology_from_bmesh(bm, obj)
+    topology, world_positions, face_vertices, face_normals, overlay_offset = (
+        _topology_from_bmesh(bm, obj)
+    )
     visible_edges = {edge.index for edge in bm.edges if not edge.hide}
     if settings.flow_scope == "SELECTED":
         eligible = {edge.index for edge in bm.edges if edge.select and not edge.hide}
@@ -98,10 +135,15 @@ def build_flow_session(context: Any) -> FlowSession:
     if not flows:
         raise EdgeFlowError("No flows match this scope and minimum edge count")
     return FlowSession(
+        object_name=obj.name,
         topology=topology,
         flows=flows,
-        neighbors=neighboring_flows(flows, topology.face_edges),
+        neighbors=parallel_neighboring_flows(flows, topology.face_edges),
+        quad_faces=quad_strip_faces(flows, topology.face_edges),
+        face_vertices=face_vertices,
+        face_normals=face_normals,
         world_positions=world_positions,
+        overlay_offset=overlay_offset,
         mesh_signature=_mesh_signature(bm),
     )
 
@@ -110,8 +152,10 @@ def update_flow_metrics(settings: Any, session: FlowSession, index: int) -> int:
     index %= len(session.flows)
     flow = session.flows[index]
     settings.flow_index = index
+    settings.flow_object_name = session.object_name
     settings.flow_count = len(session.flows)
     settings.flow_edge_count = flow.edge_count
+    settings.flow_quad_count = len(session.quad_faces[index])
     settings.flow_length = flow.length
     settings.flow_alignment = flow.alignment
     settings.flow_closed = flow.closed
@@ -121,7 +165,7 @@ def update_flow_metrics(settings: Any, session: FlowSession, index: int) -> int:
     return index
 
 
-def select_flow(context: Any, flow: EdgeFlow) -> None:
+def select_quad_strip(context: Any, face_ids: set[int]) -> None:
     obj = context.edit_object
     bm = bmesh.from_edit_mesh(obj.data)
     bm.verts.ensure_lookup_table()
@@ -133,12 +177,47 @@ def select_flow(context: Any, flow: EdgeFlow) -> None:
         edge.select_set(False)
     for vertex in bm.verts:
         vertex.select_set(False)
-    context.tool_settings.mesh_select_mode = (False, True, False)
-    bm.select_mode = {"EDGE"}
-    for edge_id in flow.edge_ids:
-        bm.edges[edge_id].select_set(True)
+    context.tool_settings.mesh_select_mode = (False, False, True)
+    bm.select_mode = {"FACE"}
+    for face_id in face_ids:
+        bm.faces[face_id].select_set(True)
     bm.select_flush_mode()
     bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=False)
+
+
+def focus_flow(context: Any, session: FlowSession, index: int) -> None:
+    settings = context.scene.topology_transitions
+    if (
+        not settings.flow_focus_view
+        or context.area is None
+        or context.area.type != "VIEW_3D"
+        or context.space_data is None
+    ):
+        return
+    vertex_ids = {
+        vertex_id
+        for face_id in session.quad_faces[index]
+        for vertex_id in session.face_vertices[face_id]
+    }
+    if not vertex_ids:
+        vertex_ids.update(session.flows[index].vertex_ids)
+    points = [session.world_positions[vertex_id] for vertex_id in vertex_ids]
+    minimum = tuple(min(point[axis] for point in points) for axis in range(3))
+    maximum = tuple(max(point[axis] for point in points) for axis in range(3))
+    center = tuple((minimum[axis] + maximum[axis]) * 0.5 for axis in range(3))
+    radius = max(
+        sqrt(sum((point[axis] - center[axis]) ** 2 for axis in range(3)))
+        for point in points
+    )
+    region_3d = context.space_data.region_3d
+    region_3d.view_location = center
+    aspect = 1.0
+    window_region = next(
+        (region for region in context.area.regions if region.type == "WINDOW"), None
+    )
+    if window_region is not None and window_region.height:
+        aspect = window_region.width / window_region.height
+    region_3d.view_distance = max(radius * 2.8 * max(1.0, 1.0 / aspect), 0.25)
 
 
 class QT_OT_edge_flow_step(Operator):
@@ -165,17 +244,19 @@ class QT_OT_edge_flow_step(Operator):
         except (EdgeFlowError, ValueError) as exc:
             self.report({"ERROR"}, str(exc))
             return {"CANCELLED"}
-        if settings.flow_count:
+        if settings.flow_count and settings.flow_object_name == session.object_name:
             current = min(settings.flow_index, len(session.flows) - 1)
         else:
             current = -1 if self.direction > 0 else 0
         index = update_flow_metrics(settings, session, current + self.direction)
         if self.select_current:
-            select_flow(context, session.flows[index])
+            select_quad_strip(context, session.quad_faces[index])
+        focus_flow(context, session, index)
         flow = session.flows[index]
         self.report(
             {"INFO"},
             f"Flow {index + 1}/{len(session.flows)}: {flow.edge_count} edges, "
+            f"{len(session.quad_faces[index])} quads, "
             f"{flow.alignment:.0%} aligned",
         )
         return {"FINISHED"}
@@ -189,6 +270,14 @@ class QT_OT_edge_flow_scroll(Operator):
     )
     bl_options = {"REGISTER", "UNDO", "BLOCKING"}
 
+    start_index: IntProperty(
+        name="Start Index",
+        description="Optional flow index used by scripted invocations",
+        min=-1,
+        default=-1,
+        options={"HIDDEN", "SKIP_SAVE"},
+    )
+
     _area = None
     _draw_view_handle = None
     _draw_hud_handle = None
@@ -197,6 +286,7 @@ class QT_OT_edge_flow_scroll(Operator):
     _object_name = ""
     _original_selection: dict[str, set[int]] | None = None
     _original_select_mode: tuple[bool, bool, bool] | None = None
+    _original_bmesh_select_mode: set[str] | None = None
 
     @classmethod
     def poll(cls, context: Any) -> bool:
@@ -210,6 +300,7 @@ class QT_OT_edge_flow_scroll(Operator):
             "faces": {face.index for face in bm.faces if face.select},
         }
         self._original_select_mode = tuple(context.tool_settings.mesh_select_mode)
+        self._original_bmesh_select_mode = set(bm.select_mode)
 
     def _restore_selection(self, context: Any) -> None:
         if self._original_selection is None or context.edit_object is None:
@@ -225,6 +316,9 @@ class QT_OT_edge_flow_scroll(Operator):
             face.select_set(face.index in self._original_selection["faces"])
         if self._original_select_mode is not None:
             context.tool_settings.mesh_select_mode = self._original_select_mode
+        if self._original_bmesh_select_mode is not None:
+            bm.select_mode = self._original_bmesh_select_mode
+            bm.select_flush_mode()
         bmesh.update_edit_mesh(
             context.edit_object.data,
             loop_triangles=False,
@@ -241,6 +335,32 @@ class QT_OT_edge_flow_scroll(Operator):
                     self._session.world_positions[second],
                 )
             )
+        return positions
+
+    def _face_triangle_positions(self, face_ids: set[int]):
+        positions = []
+        for face_id in face_ids:
+            vertex_ids = self._session.face_vertices[face_id]
+            if len(vertex_ids) != 4:
+                continue
+            normal = self._session.face_normals[face_id]
+
+            def offset_position(vertex_id):
+                position = self._session.world_positions[vertex_id]
+                return tuple(
+                    position[axis] + normal[axis] * self._session.overlay_offset
+                    for axis in range(3)
+                )
+
+            first = offset_position(vertex_ids[0])
+            for offset in range(1, len(vertex_ids) - 1):
+                positions.extend(
+                    (
+                        first,
+                        offset_position(vertex_ids[offset]),
+                        offset_position(vertex_ids[offset + 1]),
+                    )
+                )
         return positions
 
     @staticmethod
@@ -264,6 +384,16 @@ class QT_OT_edge_flow_scroll(Operator):
         try:
             gpu.state.blend_set("ALPHA")
             gpu.state.depth_test_set("LESS_EQUAL")
+            gpu.state.depth_mask_set(False)
+            strip_positions = self._face_triangle_positions(
+                self._session.quad_faces[self._index]
+            )
+            if strip_positions:
+                shader = gpu.shader.from_builtin("UNIFORM_COLOR")
+                batch = batch_for_shader(shader, "TRIS", {"pos": strip_positions})
+                shader.bind()
+                shader.uniform_float("color", (1.0, 0.22, 0.03, 0.3))
+                batch.draw(shader)
             if settings.flow_show_neighbors:
                 neighbor_edges = {
                     edge_id
@@ -293,6 +423,7 @@ class QT_OT_edge_flow_scroll(Operator):
                 batch.draw(shader)
         finally:
             gpu.state.point_size_set(1.0)
+            gpu.state.depth_mask_set(True)
             gpu.state.depth_test_set("NONE")
             gpu.state.blend_set("NONE")
 
@@ -303,15 +434,18 @@ class QT_OT_edge_flow_scroll(Operator):
         settings = bpy.context.scene.topology_transitions
         lines = [
             f"EDGE FLOW {self._index + 1} / {len(self._session.flows)}",
-            f"{flow.edge_count} edges   {flow.length:.3f} length   "
-            f"{flow.alignment:.0%} aligned",
+            f"{flow.edge_count} edges   "
+            f"{len(self._session.quad_faces[self._index])} quad strip faces   "
+            f"{flow.length:.3f} length",
+            f"{flow.alignment:.0%} aligned   "
+            f"{settings.flow_sort.replace('_', ' ').title()} order",
             "Closed loop"
             if flow.closed
             else f"{flow.start.label}  ->  {flow.end.label}",
             f"{settings.flow_mode.title()} mode   "
-            f"{len(self._session.neighbors[self._index])} neighboring flows",
-            "Wheel/Arrows browse | Enter select | S select & stay | "
-            "N neighbors | Esc cancel",
+            f"{len(self._session.neighbors[self._index])} parallel neighbors",
+            "Wheel/Arrows browse + focus | Enter select strip | "
+            "S select & stay | F focus | N neighbors | Esc cancel",
         ]
         font_id = 0
         blf.size(font_id, 16.0)
@@ -319,7 +453,7 @@ class QT_OT_edge_flow_scroll(Operator):
         blf.shadow(font_id, 3, 0.0, 0.0, 0.0, 0.9)
         blf.color(font_id, 1.0, 1.0, 1.0, 1.0)
         for line_index, line in enumerate(lines):
-            blf.position(font_id, 56.0, 128.0 - line_index * 21.0, 0.0)
+            blf.position(font_id, 56.0, 149.0 - line_index * 21.0, 0.0)
             blf.draw(font_id, line)
         blf.disable(font_id, blf.SHADOW)
 
@@ -331,6 +465,7 @@ class QT_OT_edge_flow_scroll(Operator):
         self._index = update_flow_metrics(
             context.scene.topology_transitions, self._session, index
         )
+        focus_flow(context, self._session, self._index)
         self._redraw()
 
     def _cleanup(self, context: Any) -> None:
@@ -357,8 +492,13 @@ class QT_OT_edge_flow_scroll(Operator):
         self._object_name = context.edit_object.name
         self._capture_selection(context)
         settings = context.scene.topology_transitions
-        self._index = min(settings.flow_index, len(self._session.flows) - 1)
+        self._index = (
+            0
+            if self.start_index < 0
+            else min(self.start_index, len(self._session.flows) - 1)
+        )
         update_flow_metrics(settings, self._session, self._index)
+        focus_flow(context, self._session, self._index)
         self._draw_view_handle = SpaceView3D.draw_handler_add(
             self._draw_view, (), "WINDOW", "POST_VIEW"
         )
@@ -367,8 +507,8 @@ class QT_OT_edge_flow_scroll(Operator):
         )
         context.window_manager.modal_handler_add(self)
         context.workspace.status_text_set(
-            "Edge Flow Scroll: Wheel/Arrows browse, Enter selects, "
-            "S selects and stays, N toggles neighbors, Esc cancels"
+            "Edge Flow Scroll: Wheel/Arrows browse and focus, Enter selects strip, "
+            "S selects and stays, F toggles focus, N toggles neighbors, Esc cancels"
         )
         self._redraw()
         return {"RUNNING_MODAL"}
@@ -389,11 +529,18 @@ class QT_OT_edge_flow_scroll(Operator):
             self._cleanup(context)
             return {"CANCELLED"}
         if event.type in {"RET", "NUMPAD_ENTER"} and event.value == "PRESS":
-            select_flow(context, self._session.flows[self._index])
+            select_quad_strip(context, self._session.quad_faces[self._index])
             self._cleanup(context)
             return {"FINISHED"}
         if event.type == "S" and event.value == "PRESS":
-            select_flow(context, self._session.flows[self._index])
+            select_quad_strip(context, self._session.quad_faces[self._index])
+            self._redraw()
+            return {"RUNNING_MODAL"}
+        if event.type == "F" and event.value == "PRESS":
+            settings = context.scene.topology_transitions
+            settings.flow_focus_view = not settings.flow_focus_view
+            if settings.flow_focus_view:
+                focus_flow(context, self._session, self._index)
             self._redraw()
             return {"RUNNING_MODAL"}
         if event.type == "N" and event.value == "PRESS":

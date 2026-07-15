@@ -53,7 +53,7 @@ def main() -> None:
         )
     if not hasattr(bpy.types.Scene, "topology_transitions"):
         raise AssertionError("Installed add-on did not register scene settings")
-    if topology_transitions.bl_info["version"] != (0, 2, 0):
+    if topology_transitions.bl_info["version"] != (0, 3, 0):
         raise AssertionError(
             f"Installed add-on reported {topology_transitions.bl_info['version']}"
         )
@@ -84,9 +84,24 @@ def main() -> None:
             f"Installed edge-flow browser returned {flow_result} / "
             f"{settings.flow_count} flows"
         )
+    flow_count = settings.flow_count
+    strip_quads = settings.flow_quad_count
+    bpy.ops.object.mode_set(mode="OBJECT")
+    example_result = bpy.ops.object.quad_transition_add_example_plane()
+    example = bpy.context.active_object
+    if (
+        example_result != {"FINISHED"}
+        or example is None
+        or len(example.data.polygons) != 56
+    ):
+        raise AssertionError(
+            f"Installed example plane returned {example_result} / "
+            f"{0 if example is None else len(example.data.polygons)} faces"
+        )
     print(
         f"QT_INSTALLED_SMOKE_PASS module={loaded} "
-        f"selected_quads={len(selected)} flows={settings.flow_count}"
+        f"selected_quads={len(selected)} flows={flow_count} "
+        f"strip_quads={strip_quads} example_quads=56"
     )
 
 

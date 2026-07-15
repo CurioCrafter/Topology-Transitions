@@ -142,6 +142,11 @@ class QT_PG_settings(PropertyGroup):
         name="Order",
         description="Order used when scrolling through flows",
         items=(
+            (
+                "SIDE_TO_SIDE",
+                "Side to Side",
+                "Keep parallel flows together and traverse adjacent quad strips",
+            ),
             ("LONGEST", "Longest First", "Show flows with the most edges first"),
             (
                 "SMOOTHEST",
@@ -150,14 +155,14 @@ class QT_PG_settings(PropertyGroup):
             ),
             ("INDEX", "Mesh Order", "Use deterministic mesh edge order"),
         ),
-        default="LONGEST",
+        default="SIDE_TO_SIDE",
     )
     flow_min_edges: IntProperty(
         name="Minimum Edges",
         description="Hide shorter flow fragments; use one to include every edge",
         min=1,
         max=1000,
-        default=2,
+        default=1,
     )
     flow_min_alignment: FloatProperty(
         name="Pair Threshold",
@@ -169,12 +174,19 @@ class QT_PG_settings(PropertyGroup):
     )
     flow_show_neighbors: BoolProperty(
         name="Show Neighbors",
-        description="Draw flows sharing faces with the current flow in cyan",
+        description="Draw parallel flows one quad away in cyan",
+        default=True,
+    )
+    flow_focus_view: BoolProperty(
+        name="Focus View",
+        description="Center and frame the active quad strip while browsing",
         default=True,
     )
     flow_index: IntProperty(name="Current Flow", min=0, default=0)
+    flow_object_name: StringProperty(name="Inspected Object", default="")
     flow_count: IntProperty(name="Flow Count", min=0, default=0)
     flow_edge_count: IntProperty(name="Edge Count", min=0, default=0)
+    flow_quad_count: IntProperty(name="Quad Count", min=0, default=0)
     flow_neighbor_count: IntProperty(name="Neighbor Count", min=0, default=0)
     flow_length: FloatProperty(name="Flow Length", min=0.0, default=0.0)
     flow_alignment: FloatProperty(name="Flow Alignment", min=0.0, max=1.0, default=0.0)

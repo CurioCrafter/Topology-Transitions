@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "topology_transitions"
-version = "0.2.0"
+version = "0.3.0"
 name = "Topology Transitions"
 tagline = "Guided quad transitions and edge-flow inspection"
 maintainer = "CurioCrafter"

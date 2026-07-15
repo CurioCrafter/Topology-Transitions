@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0 - 2026-07-15
+
+- Changed flow browsing to group true parallel families and traverse each side-to-side before moving to another orientation or disconnected family.
+- Added translucent full-quad-strip highlighting around the active edge flow and limited cyan neighbors to parallel flows one quad away.
+- Added automatic viewport centering and framing on every scroll step, with an `F` shortcut and **Focus View** toggle.
+- Changed flow confirmation to select the full adjoining quad strip instead of only the center edge chain.
+- Added an **Add 5 to 3 Example Plane** action that creates a portrait all-quad reference mesh with colored topology bands.
+- Added pure and Blender integration coverage for spatial ordering, strip membership, strip selection, and example-plane topology.
+
 ## 0.2.0 - 2026-07-15
 
 - Added a modal Edge Flow Scroll inspector with wheel/arrow navigation, selection controls, and cancellation that restores the original selection.

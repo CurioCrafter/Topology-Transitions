@@ -380,10 +380,11 @@ def assert_edge_flow_step_browser() -> None:
             f"{settings.flow_count} / {settings.flow_edge_count}"
         )
     bm = bmesh.from_edit_mesh(obj.data)
-    selected_edges = [edge for edge in bm.edges if edge.select]
-    if len(selected_edges) != 4:
+    selected_faces = [face for face in bm.faces if face.select]
+    if len(selected_faces) != settings.flow_quad_count or len(selected_faces) != 8:
         raise AssertionError(
-            f"Expected current flow to select four edges, found {len(selected_edges)}"
+            f"Expected current flow to select eight strip quads, found "
+            f"{len(selected_faces)}"
         )
     result = bpy.ops.mesh.quad_transition_edge_flow_step(
         direction=1, select_current=True
@@ -391,6 +392,19 @@ def assert_edge_flow_step_browser() -> None:
     if result != {"FINISHED"} or settings.flow_index != 1:
         raise AssertionError("Edge flow next step did not advance to index one")
 
+    all_session = build_flow_session(bpy.context)
+    for face in bm.faces:
+        face.select_set(False)
+    for edge in bm.edges:
+        edge.select_set(False)
+    for vertex in bm.verts:
+        vertex.select_set(False)
+    bm.select_mode = {"EDGE"}
+    bpy.context.tool_settings.mesh_select_mode = (False, True, False)
+    for edge_id in all_session.flows[settings.flow_index].edge_ids:
+        bm.edges[edge_id].select_set(True)
+    bm.select_flush_mode()
+    bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=False)
     settings.flow_scope = "SELECTED"
     settings.flow_min_edges = 1
     result = bpy.ops.mesh.quad_transition_edge_flow_step(
@@ -398,7 +412,85 @@ def assert_edge_flow_step_browser() -> None:
     )
     if result != {"FINISHED"} or settings.flow_count != 1:
         raise AssertionError("Selected scope did not isolate the current flow")
-    print("QT_EDGE_FLOW_STEP_PASS all_flows=5 selected_scope=1 current_edges=4")
+    print("QT_EDGE_FLOW_STEP_PASS all_flows=5 selected_scope=1 strip_quads=8")
+
+
+def assert_side_to_side_strip_order() -> None:
+    clear_scene()
+    create_grid("side_to_side_grid", 4, 3)
+    settings = bpy.context.scene.topology_transitions
+    settings.flow_mode = "TOPOLOGY"
+    settings.flow_scope = "ALL"
+    settings.flow_sort = "SIDE_TO_SIDE"
+    settings.flow_min_edges = 2
+    session = build_flow_session(bpy.context)
+    edge_counts = [flow.edge_count for flow in session.flows]
+    strip_counts = [
+        len(session.quad_faces[index]) for index in range(len(session.flows))
+    ]
+    breaks = [
+        index
+        for index in range(len(session.flows) - 1)
+        if index + 1 not in session.neighbors[index]
+    ]
+    if edge_counts != [3, 3, 3, 4, 4]:
+        raise AssertionError(f"Side-to-side ordering jumped families: {edge_counts}")
+    if strip_counts != [6, 6, 6, 8, 8] or breaks != [2]:
+        raise AssertionError(
+            f"Unexpected strip traversal: strips={strip_counts}, breaks={breaks}"
+        )
+    print("QT_EDGE_FLOW_SIDE_PASS order=3,3,3,4,4 strips=6,6,6,8,8 family_breaks=1")
+
+
+def assert_example_plane() -> None:
+    clear_scene()
+    result = bpy.ops.object.quad_transition_add_example_plane()
+    if result != {"FINISHED"}:
+        raise AssertionError(f"Example plane returned {result}")
+    obj = bpy.context.active_object
+    if obj is None or obj.name != "TopologyTransitions_Example_5to3":
+        raise AssertionError("Example plane did not become the active object")
+    if len(obj.data.polygons) != 56 or any(
+        len(polygon.vertices) != 4 for polygon in obj.data.polygons
+    ):
+        raise AssertionError(
+            f"Expected 56 example quads, found {len(obj.data.polygons)} polygons"
+        )
+    if len(obj.data.materials) != 3:
+        raise AssertionError("Example plane did not receive three reference bands")
+    bpy.ops.object.mode_set(mode="EDIT")
+    bm = bmesh.from_edit_mesh(obj.data)
+    junctions = [
+        vertex
+        for vertex in bm.verts
+        if len(vertex.link_edges) != 4
+        and not any(len(edge.link_faces) < 2 for edge in vertex.link_edges)
+    ]
+    junction_valences = sorted(len(vertex.link_edges) for vertex in junctions)
+    if junction_valences != [3, 3, 3, 3, 5, 5]:
+        details = [
+            (vertex.index, tuple(vertex.co), len(vertex.link_edges))
+            for vertex in junctions
+        ]
+        raise AssertionError(f"Unexpected example junctions: {details}")
+    for face in bm.faces:
+        face.select_set(False)
+    for edge in bm.edges:
+        edge.select_set(False)
+    for vertex in bm.verts:
+        vertex.select_set(False)
+    bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=False)
+    settings = bpy.context.scene.topology_transitions
+    settings.flow_scope = "ALL"
+    settings.flow_sort = "SIDE_TO_SIDE"
+    settings.flow_min_edges = 2
+    session = build_flow_session(bpy.context)
+    if not session.flows or not all(session.quad_faces.values()):
+        raise AssertionError("Example plane did not produce inspectable quad strips")
+    print(
+        f"QT_EXAMPLE_PLANE_PASS quads=56 n_poles=4 e_poles=2 "
+        f"flows={len(session.flows)} materials=3"
+    )
 
 
 def assert_edge_flow_pole_endpoints() -> None:
@@ -438,14 +530,16 @@ def main() -> None:
         assert_transition("FIVE_TO_THREE", 5, 1, 11, 2)
         assert_transition("ONE_TO_TWO", 2, 1, 3, 1)
         assert_edge_flow_step_browser()
+        assert_side_to_side_strip_order()
         assert_edge_flow_pole_endpoints()
+        assert_example_plane()
         assert_subdivision_preview()
         assert_external_projection_target()
         assert_invalid_selection_is_unchanged()
         assert_shape_key_is_unchanged()
         print(
             "QT_BLENDER_SMOKE_PASS patterns=13 rejection_cases=2 "
-            "preview=1 external_projection=1 edge_flow=2"
+            "preview=1 external_projection=1 edge_flow=3 example_plane=1"
         )
     finally:
         clear_scene()
