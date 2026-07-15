@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0 - 2026-07-15
+
+- Replaced edge-chain browsing with true quad face-flow discovery: each flow is a maximal one-quad-wide band crossing opposite edges of successive quads.
+- Changed the viewport overlay, selection, focus, metrics, selected scope, neighbor display, and side-to-side ordering to operate on face bands directly.
+- Added separate **Solve Selected Tris** and **Solve Selected N-gons** operators with adjacent-triangle merging, even n-gon fans, triangle-plus-odd-n-gon parity repair, boundary center grids, rollback, and unsupported-face selection.
+- Expanded Apply Transition to replace rectangular mixed quad/triangle/n-gon regions and regions enclosed by a closed selected edge loop.
+- Replaced the single 5 → 3 example with one labeled 256-quad atlas covering all eight supported transition directions.
+- Added Blender-independent quad-flow and repair-planning tests plus headless Blender coverage for five repair cases and both new transition input modes.
+
 ## 0.3.0 - 2026-07-15
 
 - Changed flow browsing to group true parallel families and traverse each side-to-side before moving to another orientation or disconnected family.

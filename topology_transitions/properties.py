@@ -112,29 +112,12 @@ class QT_PG_settings(PropertyGroup):
         max=4,
         default=2,
     )
-    flow_mode: EnumProperty(
-        name="Flow Mode",
-        description="How an edge continues through a vertex",
-        items=(
-            (
-                "TOPOLOGY",
-                "Quad Topology",
-                "Follow opposite edges at regular quad vertices and stop at poles",
-            ),
-            (
-                "GEOMETRIC",
-                "Geometric Continuity",
-                "Pair the straightest edges, including through extraordinary vertices",
-            ),
-        ),
-        default="TOPOLOGY",
-    )
     flow_scope: EnumProperty(
         name="Scope",
-        description="Edges considered by the flow browser",
+        description="Faces considered by the quad-flow browser",
         items=(
-            ("ALL", "All Visible", "Inspect all visible edges on the active mesh"),
-            ("SELECTED", "Selected", "Inspect only currently selected edges"),
+            ("ALL", "All Visible", "Inspect all visible faces on the active mesh"),
+            ("SELECTED", "Selected Faces", "Inspect only selected faces"),
         ),
         default="ALL",
     )
@@ -145,48 +128,40 @@ class QT_PG_settings(PropertyGroup):
             (
                 "SIDE_TO_SIDE",
                 "Side to Side",
-                "Keep parallel flows together and traverse adjacent quad strips",
+                "Finish adjacent parallel face bands before changing direction",
             ),
-            ("LONGEST", "Longest First", "Show flows with the most edges first"),
+            ("LONGEST", "Longest First", "Show flows with the most quads first"),
             (
                 "SMOOTHEST",
                 "Smoothest First",
                 "Show the straightest or smoothest flows first",
             ),
-            ("INDEX", "Mesh Order", "Use deterministic mesh edge order"),
+            ("INDEX", "Mesh Order", "Use deterministic mesh face order"),
         ),
         default="SIDE_TO_SIDE",
     )
     flow_min_edges: IntProperty(
-        name="Minimum Edges",
-        description="Hide shorter flow fragments; use one to include every edge",
+        name="Minimum Quads",
+        description="Hide shorter face bands; use one to include every quad",
         min=1,
         max=1000,
         default=1,
     )
-    flow_min_alignment: FloatProperty(
-        name="Pair Threshold",
-        description="Minimum straightness required to pair two edges into one flow",
-        min=0.0,
-        max=1.0,
-        default=0.15,
-        subtype="FACTOR",
-    )
     flow_show_neighbors: BoolProperty(
         name="Show Neighbors",
-        description="Draw parallel flows one quad away in cyan",
+        description="Fill directly adjacent parallel quad bands in cyan",
         default=True,
     )
     flow_focus_view: BoolProperty(
         name="Focus View",
-        description="Center and frame the active quad strip while browsing",
+        description="Center and frame the active quad face band while browsing",
         default=True,
     )
     flow_index: IntProperty(name="Current Flow", min=0, default=0)
     flow_object_name: StringProperty(name="Inspected Object", default="")
     flow_count: IntProperty(name="Flow Count", min=0, default=0)
-    flow_edge_count: IntProperty(name="Edge Count", min=0, default=0)
-    flow_quad_count: IntProperty(name="Quad Count", min=0, default=0)
+    flow_edge_count: IntProperty(name="Band Edge Count", min=0, default=0)
+    flow_quad_count: IntProperty(name="Flow Quad Count", min=0, default=0)
     flow_neighbor_count: IntProperty(name="Neighbor Count", min=0, default=0)
     flow_length: FloatProperty(name="Flow Length", min=0.0, default=0.0)
     flow_alignment: FloatProperty(name="Flow Alignment", min=0.0, max=1.0, default=0.0)

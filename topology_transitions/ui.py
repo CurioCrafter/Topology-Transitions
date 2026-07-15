@@ -49,15 +49,32 @@ class QT_PT_sidebar(Panel):
         example.label(text="Example Mesh")
         example.operator(
             "object.quad_transition_add_example_plane",
-            text="Add 5 to 3 Example Plane",
+            text="Add All Transition Examples",
             icon="MESH_GRID",
         )
         if context.mode != "OBJECT":
             example.label(text="Switch to Object Mode to add it", icon="INFO")
 
+        repair = layout.box()
+        repair.label(text="Topology Repair")
+        repair.label(text="Select non-quad faces in Edit Mode")
+        repair.operator(
+            "mesh.quad_transition_solve_selected_tris",
+            text="Solve Selected Tris",
+            icon="FACESEL",
+        )
+        repair.operator(
+            "mesh.quad_transition_solve_selected_ngons",
+            text="Solve Selected N-gons",
+            icon="FACESEL",
+        )
+        repair.label(text="Unsupported faces stay selected", icon="INFO")
+        repair.label(text="Select both faces for a mixed tri + n-gon repair")
+
         selection = layout.box()
-        selection.label(text="1. Select a rectangular quad patch")
-        selection.label(text="Width must equal the larger loop count")
+        selection.label(text="1. Select a patch or closed boundary loop")
+        selection.label(text="Interior faces may be quads, tris, or n-gons")
+        selection.label(text="Boundary needs four sides and the required width")
         selection.label(text="Make an incoming boundary edge active if needed")
 
         pattern = layout.box()
@@ -100,15 +117,13 @@ class QT_PT_sidebar(Panel):
         toggle.levels = settings.subdivision_levels
 
         flow = layout.box()
-        flow.label(text="Edge Flow Scroll")
+        flow.label(text="Quad Flow Scroll")
+        flow.label(text="Browse one-quad-wide face loops and strips")
         row = flow.row(align=True)
-        row.prop(settings, "flow_mode", text="")
         row.prop(settings, "flow_scope", text="")
+        row.prop(settings, "flow_min_edges")
         row = flow.row(align=True)
         row.prop(settings, "flow_sort", text="")
-        row.prop(settings, "flow_min_edges")
-        if settings.flow_mode == "GEOMETRIC":
-            flow.prop(settings, "flow_min_alignment")
         row = flow.row(align=True)
         row.prop(settings, "flow_focus_view")
         row.prop(settings, "flow_show_neighbors")
@@ -129,19 +144,18 @@ class QT_PT_sidebar(Panel):
         following.select_current = True
         flow.operator(
             "mesh.quad_transition_edge_flow_scroll",
-            text="Start Wheel Inspector",
+            text="Start Quad Flow Inspector",
         )
 
         if settings.flow_count:
             metrics = flow.column(align=True)
             metrics.label(
-                text=f"Flow {settings.flow_index + 1} / {settings.flow_count}  •  "
-                f"{settings.flow_edge_count} edges  •  "
-                f"{settings.flow_quad_count} quads"
+                text=f"Quad Flow {settings.flow_index + 1} / "
+                f"{settings.flow_count}  •  {settings.flow_quad_count} quads"
             )
             metrics.label(
                 text=f"Length {settings.flow_length:.3f}  •  "
-                f"Alignment {settings.flow_alignment:.0%}"
+                f"Smoothness {settings.flow_alignment:.0%}"
             )
             if settings.flow_closed:
                 metrics.label(text="Closed loop")
@@ -149,7 +163,9 @@ class QT_PT_sidebar(Panel):
                 metrics.label(
                     text=f"{settings.flow_start_label} → {settings.flow_end_label}"
                 )
-            metrics.label(text=f"{settings.flow_neighbor_count} parallel neighbors")
+            metrics.label(
+                text=f"{settings.flow_neighbor_count} parallel face bands"
+            )
 
         note = layout.column(align=True)
         note.label(text="Boundary vertices are always pinned.")

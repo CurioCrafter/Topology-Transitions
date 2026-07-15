@@ -60,6 +60,61 @@ def _face_component(faces: set[Any]) -> set[Any]:
     return visited
 
 
+def _region_boundary_edges(faces: set[Any]) -> set[Any]:
+    return {
+        edge
+        for face in faces
+        for edge in face.edges
+        if sum(linked in faces for linked in edge.link_faces) == 1
+    }
+
+
+def _faces_inside_selected_edge_loop(bm: Any) -> list[Any] | None:
+    selected_edges = {edge for edge in bm.edges if edge.select and not edge.hide}
+    if len(selected_edges) < 3:
+        return None
+    try:
+        _ordered_boundary(selected_edges)
+    except TransitionError:
+        return None
+
+    adjacent_faces = {
+        face for edge in selected_edges for face in edge.link_faces if not face.hide
+    }
+    candidates: list[set[Any]] = []
+    unvisited = set(adjacent_faces)
+    while unvisited:
+        seed = next(iter(unvisited))
+        pending = [seed]
+        component: set[Any] = set()
+        while pending:
+            face = pending.pop()
+            if face in component or face.hide:
+                continue
+            component.add(face)
+            for edge in face.edges:
+                if edge in selected_edges:
+                    continue
+                pending.extend(
+                    linked
+                    for linked in edge.link_faces
+                    if linked not in component and not linked.hide
+                )
+        unvisited -= component
+        if _region_boundary_edges(component) == selected_edges:
+            candidates.append(component)
+    if not candidates:
+        raise TransitionError(
+            "Selected edges form a loop but do not enclose one face region"
+        )
+    return list(
+        min(
+            candidates,
+            key=lambda faces: (len(faces), min(face.index for face in faces)),
+        )
+    )
+
+
 def _ordered_boundary(boundary_edges: set[Any]) -> tuple[list[Any], list[Any]]:
     neighbors: dict[Any, list[tuple[Any, Any]]] = {}
     for edge in boundary_edges:
@@ -126,6 +181,25 @@ def _active_path_index(bm: Any, paths: list[list[Any]]) -> int | None:
     return None
 
 
+def _geometric_corners(boundary_vertices: list[Any]) -> list[Any]:
+    scores = []
+    for index, vertex in enumerate(boundary_vertices):
+        previous = boundary_vertices[index - 1]
+        following = boundary_vertices[(index + 1) % len(boundary_vertices)]
+        incoming = vertex.co - previous.co
+        outgoing = following.co - vertex.co
+        if incoming.length_squared <= 1.0e-16 or outgoing.length_squared <= 1.0e-16:
+            raise TransitionError("Patch boundary contains a zero-length edge")
+        score = 1.0 - incoming.normalized().dot(outgoing.normalized())
+        scores.append((score, vertex.index, vertex))
+    corners = [vertex for _score, _index, vertex in sorted(scores, reverse=True)[:4]]
+    if len(corners) != 4 or sorted(scores, reverse=True)[3][0] <= 1.0e-4:
+        raise TransitionError(
+            "Mixed-topology patches need four geometrically distinct boundary corners"
+        )
+    return corners
+
+
 def _validate_structured_rectangle(
     selected_faces: set[Any],
     patch_vertices: set[Any],
@@ -178,11 +252,13 @@ def analyze_selected_patch(
     bm.verts.ensure_lookup_table()
     bm.edges.ensure_lookup_table()
     bm.faces.ensure_lookup_table()
-    selected_faces = [face for face in bm.faces if face.select and not face.hide]
+    selected_faces = _faces_inside_selected_edge_loop(bm)
+    if selected_faces is None:
+        selected_faces = [face for face in bm.faces if face.select and not face.hide]
     if not selected_faces:
-        raise TransitionError("Select a rectangular strip of quad faces")
-    if any(len(face.verts) != 4 for face in selected_faces):
-        raise TransitionError("The selected patch must contain quads only")
+        raise TransitionError(
+            "Select a rectangular face region or its closed boundary edge loop"
+        )
     selected_set = set(selected_faces)
     if _face_component(selected_set) != selected_set:
         raise TransitionError("The selected patch must be one connected region")
@@ -191,18 +267,19 @@ def analyze_selected_patch(
     patch_vertices = {vertex for face in selected_faces for vertex in face.verts}
     if any(len(edge.link_faces) > 2 for edge in patch_edges):
         raise TransitionError("The selected patch touches a non-manifold edge")
-    boundary_edges = {
-        edge
-        for edge in patch_edges
-        if sum(face in selected_set for face in edge.link_faces) == 1
-    }
+    boundary_edges = _region_boundary_edges(selected_set)
     boundary_vertices, _ordered_edges = _ordered_boundary(boundary_edges)
 
-    corners = [
-        vertex
-        for vertex in boundary_vertices
-        if _selected_face_count(vertex, selected_set) == 1
-    ]
+    structured_quads = all(len(face.verts) == 4 for face in selected_faces)
+    corners = (
+        [
+            vertex
+            for vertex in boundary_vertices
+            if _selected_face_count(vertex, selected_set) == 1
+        ]
+        if structured_quads
+        else _geometric_corners(boundary_vertices)
+    )
     if len(corners) != 4:
         raise TransitionError(f"Expected four patch corners, found {len(corners)}")
     corner_indices = sorted(boundary_vertices.index(vertex) for vertex in corners)
@@ -214,11 +291,16 @@ def analyze_selected_patch(
         )
         for index in range(4)
     ]
-    _validate_structured_rectangle(
-        selected_set, patch_vertices, boundary_vertices, paths
-    )
+    if structured_quads:
+        _validate_structured_rectangle(
+            selected_set, patch_vertices, boundary_vertices, paths
+        )
 
     path_counts = [len(path) - 1 for path in paths]
+    if path_counts[0] != path_counts[2] or path_counts[1] != path_counts[3]:
+        raise TransitionError(
+            "Opposite sides of the patch boundary have different edge counts"
+        )
     candidates = [
         axis
         for axis in (0, 1)

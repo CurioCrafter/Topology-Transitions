@@ -26,6 +26,7 @@ from .core import (
     template_adjacency,
     transition_items,
 )
+from .edit_mesh import restore_bmesh
 from .mesh_ops import analyze_selected_patch, bind_boundary
 
 PREVIEW_MODIFIER_NAME = "Topology Transition Preview"
@@ -132,17 +133,6 @@ def _projection_function(
         return world_to_active @ (target_to_world @ location)
 
     return project_target
-
-
-def _restore_bmesh(mesh: Any, bm: Any, backup: Any) -> None:
-    temporary = bpy.data.meshes.new("__topology_transition_restore__")
-    try:
-        backup.to_mesh(temporary)
-        bm.clear()
-        bm.from_mesh(temporary)
-        bmesh.update_edit_mesh(mesh, loop_triangles=True, destructive=True)
-    finally:
-        bpy.data.meshes.remove(temporary)
 
 
 def _make_template_and_layout(
@@ -356,7 +346,7 @@ def apply_transition(
         bm.select_flush_mode()
         bmesh.update_edit_mesh(mesh, loop_triangles=True, destructive=True)
     except Exception:
-        _restore_bmesh(mesh, bm, backup)
+        restore_bmesh(mesh, bm, backup)
         raise
     finally:
         backup.free()

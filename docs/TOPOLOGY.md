@@ -31,6 +31,15 @@ Therefore the boundary edge count must be even. A direct 1 → 2 band with one e
 
 The add-on assigns shoulder edges from the wide side of the selected rectangle to the side boundaries. This preserves every existing outside edge while giving the transition template the boundary parity it needs.
 
+The same parity rule governs the repair buttons:
+
+- two adjacent triangles have a four-edge union boundary and can become one quad;
+- one triangle plus one odd n-gon has an even union boundary and can be repartitioned into quads;
+- an even n-gon can be split into `n / 2 - 1` boundary-preserving quads;
+- an isolated triangle or odd n-gon cannot be filled only with quads unless its boundary gains vertices. The boundary-only center-grid fallback safely splits those edges because no unselected neighboring faces use them.
+
+The solver does not split a manifold boundary edge beside an unselected face, because doing so would turn that neighbor into an n-gon or expand the requested edit without consent.
+
 ## Two-loop cell
 
 The 5 → 3, 3 → 1, and 4 → 2 families all use the same local operation: a three-segment span on the wide row becomes one segment on the narrow row. Quads on either side pass through one-for-one.
@@ -65,3 +74,7 @@ Topology construction and geometric fitting are separate:
 6. The resulting BMesh is checked for boundary preservation, manifold affected edges, quad area, and pole valence.
 
 The original BMesh is copied before mutation. If an apply-time check or Blender API operation fails, the backup is restored before the operator returns an error.
+
+## Patch input topology
+
+The transition template depends on the outside boundary, not on the face types being replaced. Apply Transition can therefore consume either a selected mixed-topology face disk or a closed selected edge loop around one. The boundary must still form four sides with compatible opposite segment counts. For a mixed interior, the four strongest geometric turns identify the physical corners; a regular all-quad grid continues to use its exact combinatorial corners.

@@ -365,7 +365,6 @@ def assert_edge_flow_step_browser() -> None:
     clear_scene()
     obj, _columns, _rows = create_grid("edge_flow_grid", 4, 3)
     settings = bpy.context.scene.topology_transitions
-    settings.flow_mode = "TOPOLOGY"
     settings.flow_scope = "ALL"
     settings.flow_sort = "LONGEST"
     settings.flow_min_edges = 2
@@ -374,16 +373,16 @@ def assert_edge_flow_step_browser() -> None:
     )
     if result != {"FINISHED"}:
         raise AssertionError(f"Edge flow refresh returned {result}")
-    if settings.flow_count != 5 or settings.flow_edge_count != 4:
+    if settings.flow_count != 7 or settings.flow_quad_count != 4:
         raise AssertionError(
-            f"Expected five grid flows led by four edges, got "
-            f"{settings.flow_count} / {settings.flow_edge_count}"
+            f"Expected seven face flows led by four quads, got "
+            f"{settings.flow_count} / {settings.flow_quad_count}"
         )
     bm = bmesh.from_edit_mesh(obj.data)
     selected_faces = [face for face in bm.faces if face.select]
-    if len(selected_faces) != settings.flow_quad_count or len(selected_faces) != 8:
+    if len(selected_faces) != settings.flow_quad_count or len(selected_faces) != 4:
         raise AssertionError(
-            f"Expected current flow to select eight strip quads, found "
+            f"Expected current flow to select four quad faces, found "
             f"{len(selected_faces)}"
         )
     result = bpy.ops.mesh.quad_transition_edge_flow_step(
@@ -399,47 +398,41 @@ def assert_edge_flow_step_browser() -> None:
         edge.select_set(False)
     for vertex in bm.verts:
         vertex.select_set(False)
-    bm.select_mode = {"EDGE"}
-    bpy.context.tool_settings.mesh_select_mode = (False, True, False)
-    for edge_id in all_session.flows[settings.flow_index].edge_ids:
-        bm.edges[edge_id].select_set(True)
+    bm.select_mode = {"FACE"}
+    bpy.context.tool_settings.mesh_select_mode = (False, False, True)
+    for face_id in all_session.flows[settings.flow_index].face_ids:
+        bm.faces[face_id].select_set(True)
     bm.select_flush_mode()
     bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=False)
     settings.flow_scope = "SELECTED"
-    settings.flow_min_edges = 1
+    settings.flow_min_edges = 2
     result = bpy.ops.mesh.quad_transition_edge_flow_step(
         direction=0, select_current=False
     )
     if result != {"FINISHED"} or settings.flow_count != 1:
         raise AssertionError("Selected scope did not isolate the current flow")
-    print("QT_EDGE_FLOW_STEP_PASS all_flows=5 selected_scope=1 strip_quads=8")
+    print("QT_QUAD_FLOW_STEP_PASS all_flows=7 selected_scope=1 flow_quads=4")
 
 
 def assert_side_to_side_strip_order() -> None:
     clear_scene()
     create_grid("side_to_side_grid", 4, 3)
     settings = bpy.context.scene.topology_transitions
-    settings.flow_mode = "TOPOLOGY"
     settings.flow_scope = "ALL"
     settings.flow_sort = "SIDE_TO_SIDE"
     settings.flow_min_edges = 2
     session = build_flow_session(bpy.context)
-    edge_counts = [flow.edge_count for flow in session.flows]
-    strip_counts = [
-        len(session.quad_faces[index]) for index in range(len(session.flows))
-    ]
+    quad_counts = [flow.quad_count for flow in session.flows]
     breaks = [
         index
         for index in range(len(session.flows) - 1)
         if index + 1 not in session.neighbors[index]
     ]
-    if edge_counts != [3, 3, 3, 4, 4]:
-        raise AssertionError(f"Side-to-side ordering jumped families: {edge_counts}")
-    if strip_counts != [6, 6, 6, 8, 8] or breaks != [2]:
+    if quad_counts != [3, 3, 3, 3, 4, 4, 4] or breaks != [3]:
         raise AssertionError(
-            f"Unexpected strip traversal: strips={strip_counts}, breaks={breaks}"
+            f"Unexpected face-band traversal: quads={quad_counts}, breaks={breaks}"
         )
-    print("QT_EDGE_FLOW_SIDE_PASS order=3,3,3,4,4 strips=6,6,6,8,8 family_breaks=1")
+    print("QT_QUAD_FLOW_SIDE_PASS order=3,3,3,3,4,4,4 family_breaks=1")
 
 
 def assert_example_plane() -> None:
@@ -448,31 +441,23 @@ def assert_example_plane() -> None:
     if result != {"FINISHED"}:
         raise AssertionError(f"Example plane returned {result}")
     obj = bpy.context.active_object
-    if obj is None or obj.name != "TopologyTransitions_Example_5to3":
-        raise AssertionError("Example plane did not become the active object")
-    if len(obj.data.polygons) != 56 or any(
+    if obj is None or obj.name != "TopologyTransitions_Example_Atlas":
+        raise AssertionError("Example atlas did not become the active object")
+    if len(obj.data.polygons) != 256 or any(
         len(polygon.vertices) != 4 for polygon in obj.data.polygons
     ):
         raise AssertionError(
-            f"Expected 56 example quads, found {len(obj.data.polygons)} polygons"
+            f"Expected 256 atlas quads, found {len(obj.data.polygons)} polygons"
         )
     if len(obj.data.materials) != 3:
         raise AssertionError("Example plane did not receive three reference bands")
+    if obj.get("transition_count") != 8:
+        raise AssertionError("Example atlas does not advertise all eight transitions")
+    labels = [child for child in obj.children if child.type == "FONT"]
+    if len(labels) != 8:
+        raise AssertionError(f"Expected eight atlas labels, found {len(labels)}")
     bpy.ops.object.mode_set(mode="EDIT")
     bm = bmesh.from_edit_mesh(obj.data)
-    junctions = [
-        vertex
-        for vertex in bm.verts
-        if len(vertex.link_edges) != 4
-        and not any(len(edge.link_faces) < 2 for edge in vertex.link_edges)
-    ]
-    junction_valences = sorted(len(vertex.link_edges) for vertex in junctions)
-    if junction_valences != [3, 3, 3, 3, 5, 5]:
-        details = [
-            (vertex.index, tuple(vertex.co), len(vertex.link_edges))
-            for vertex in junctions
-        ]
-        raise AssertionError(f"Unexpected example junctions: {details}")
     for face in bm.faces:
         face.select_set(False)
     for edge in bm.edges:
@@ -483,17 +468,21 @@ def assert_example_plane() -> None:
     settings = bpy.context.scene.topology_transitions
     settings.flow_scope = "ALL"
     settings.flow_sort = "SIDE_TO_SIDE"
-    settings.flow_min_edges = 2
+    settings.flow_min_edges = 1
     session = build_flow_session(bpy.context)
-    if not session.flows or not all(session.quad_faces.values()):
-        raise AssertionError("Example plane did not produce inspectable quad strips")
+    memberships = sum(flow.quad_count for flow in session.flows)
+    if not session.flows or memberships != len(bm.faces) * 2:
+        raise AssertionError(
+            f"Atlas face-flow membership was {memberships}, "
+            f"expected {len(bm.faces) * 2}"
+        )
     print(
-        f"QT_EXAMPLE_PLANE_PASS quads=56 n_poles=4 e_poles=2 "
+        f"QT_EXAMPLE_ATLAS_PASS transitions=8 quads=256 labels=8 "
         f"flows={len(session.flows)} materials=3"
     )
 
 
-def assert_edge_flow_pole_endpoints() -> None:
+def assert_quad_flow_on_transition() -> None:
     clear_scene()
     create_grid("edge_flow_transition", 5, 2)
     result = bpy.ops.mesh.quad_transition_apply(
@@ -504,20 +493,180 @@ def assert_edge_flow_pole_endpoints() -> None:
     if result != {"FINISHED"}:
         raise AssertionError(f"Transition setup returned {result}")
     settings = bpy.context.scene.topology_transitions
-    settings.flow_mode = "TOPOLOGY"
     settings.flow_scope = "ALL"
     settings.flow_sort = "LONGEST"
     settings.flow_min_edges = 1
     session = build_flow_session(bpy.context)
-    labels = {
-        endpoint.label
-        for flow in session.flows
-        for endpoint in (flow.start, flow.end)
-        if endpoint is not None
+    memberships = sum(flow.quad_count for flow in session.flows)
+    bm = bmesh.from_edit_mesh(bpy.context.edit_object.data)
+    if memberships != len(bm.faces) * 2:
+        raise AssertionError(
+            f"Transition quad faces were not represented twice: {memberships}"
+        )
+    labels = {flow.start_label for flow in session.flows} | {
+        flow.end_label for flow in session.flows
     }
-    if "N-pole (v3)" not in labels:
-        raise AssertionError(f"Flow endpoints did not identify N-poles: {labels}")
-    print(f"QT_EDGE_FLOW_POLE_PASS flows={len(session.flows)} labels={sorted(labels)}")
+    if "Mesh Boundary" not in labels:
+        raise AssertionError(
+            f"Open face bands did not identify mesh boundaries: {labels}"
+        )
+    print(f"QT_QUAD_FLOW_TRANSITION_PASS flows={len(session.flows)}")
+
+
+def create_custom_mesh(name, vertices, faces):
+    clear_scene()
+    mesh = bpy.data.meshes.new(f"{name}_mesh")
+    mesh.from_pydata(vertices, [], faces)
+    mesh.update()
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.collection.objects.link(obj)
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+    bpy.ops.object.mode_set(mode="EDIT")
+    bm = bmesh.from_edit_mesh(mesh)
+    bm.select_mode = {"FACE"}
+    for face in bm.faces:
+        face.select_set(True)
+    bm.select_flush_mode()
+    bmesh.update_edit_mesh(mesh, loop_triangles=True, destructive=False)
+    return obj
+
+
+def assert_repair_operators() -> None:
+    obj = create_custom_mesh(
+        "tri_pair",
+        ((0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)),
+        ((0, 1, 2), (0, 2, 3)),
+    )
+    try:
+        result = bpy.ops.mesh.quad_transition_solve_selected_tris()
+    except RuntimeError:
+        result = {"CANCELLED"}
+    bm = bmesh.from_edit_mesh(obj.data)
+    bm.faces.ensure_lookup_table()
+    if result != {"FINISHED"} or len(bm.faces) != 1 or len(bm.faces[0].verts) != 4:
+        raise AssertionError(f"Triangle pair repair failed: {result} / {len(bm.faces)}")
+
+    obj = create_custom_mesh(
+        "boundary_tri",
+        ((0, 0, 0), (2, 0, 0), (0.5, 1.5, 0)),
+        ((0, 1, 2),),
+    )
+    result = bpy.ops.mesh.quad_transition_solve_selected_tris()
+    bm = bmesh.from_edit_mesh(obj.data)
+    bm.faces.ensure_lookup_table()
+    if result != {"FINISHED"} or len(bm.faces) != 3 or any(
+        len(face.verts) != 4 for face in bm.faces
+    ):
+        raise AssertionError(
+            "Boundary triangle did not become a three-quad center grid"
+        )
+
+    hexagon = (
+        (0, 0, 0),
+        (1, -0.25, 0),
+        (2, 0, 0),
+        (2, 1, 0),
+        (1, 1.25, 0),
+        (0, 1, 0),
+    )
+    obj = create_custom_mesh("even_ngon", hexagon, ((0, 1, 2, 3, 4, 5),))
+    result = bpy.ops.mesh.quad_transition_solve_selected_ngons()
+    bm = bmesh.from_edit_mesh(obj.data)
+    bm.faces.ensure_lookup_table()
+    if result != {"FINISHED"} or len(bm.faces) != 2 or any(
+        len(face.verts) != 4 for face in bm.faces
+    ):
+        raise AssertionError("Even n-gon did not become a two-quad fan")
+
+    obj = create_custom_mesh(
+        "mixed_pair",
+        hexagon,
+        ((0, 1, 2), (0, 2, 3, 4, 5)),
+    )
+    result = bpy.ops.mesh.quad_transition_solve_selected_ngons()
+    bm = bmesh.from_edit_mesh(obj.data)
+    bm.faces.ensure_lookup_table()
+    if result != {"FINISHED"} or len(bm.faces) != 2 or any(
+        len(face.verts) != 4 for face in bm.faces
+    ):
+        raise AssertionError("Triangle plus odd n-gon did not become two quads")
+
+    obj = create_custom_mesh(
+        "unsupported_tri",
+        ((0, 0, 0), (1, 0, 0), (0, 1, 0), (2, 1, 0), (2, 2, 0)),
+        ((0, 1, 2), (1, 3, 4, 2)),
+    )
+    bm = bmesh.from_edit_mesh(obj.data)
+    bm.faces.ensure_lookup_table()
+    bm.faces[1].select_set(False)
+    bm.select_flush_mode()
+    before = (len(bm.verts), len(bm.edges), len(bm.faces))
+    try:
+        result = bpy.ops.mesh.quad_transition_solve_selected_tris()
+    except RuntimeError:
+        result = {"CANCELLED"}
+    bm = bmesh.from_edit_mesh(obj.data)
+    bm.faces.ensure_lookup_table()
+    after = (len(bm.verts), len(bm.edges), len(bm.faces))
+    if result != {"CANCELLED"} or before != after or not bm.faces[0].select:
+        raise AssertionError("Unsupported triangle was changed instead of rejected")
+    print("QT_REPAIR_PASS tri_pair=1 boundary_tri=3 even_ngon=2 mixed_pair=2")
+
+
+def assert_mixed_and_edge_boundary_transition_inputs() -> None:
+    clear_scene()
+    obj, _columns, _rows = create_grid("mixed_input", 3, 2)
+    bm = bmesh.from_edit_mesh(obj.data)
+    source = bm.faces[0]
+    result_faces = bmesh.ops.triangulate(bm, faces=[source])["faces"]
+    for face in bm.faces:
+        face.select_set(False)
+    for face in result_faces:
+        face.select_set(True)
+    for face in bm.faces:
+        face.select_set(True)
+    bm.select_mode = {"FACE"}
+    bm.select_flush_mode()
+    bmesh.update_edit_mesh(obj.data, loop_triangles=True, destructive=True)
+    result = bpy.ops.mesh.quad_transition_apply(
+        transition="THREE_TO_ONE",
+        relax_iterations=8,
+        conform_surface=True,
+    )
+    bm = bmesh.from_edit_mesh(obj.data)
+    if result != {"FINISHED"} or len(bm.faces) != 10 or any(
+        len(face.verts) != 4 for face in bm.faces
+    ):
+        raise AssertionError("Mixed-face rectangular patch was not replaced")
+
+    clear_scene()
+    obj, _columns, _rows = create_grid("edge_boundary_input", 3, 2)
+    bm = bmesh.from_edit_mesh(obj.data)
+    for vertex in bm.verts:
+        vertex.select_set(False)
+    for edge in bm.edges:
+        edge.select_set(False)
+    for face in bm.faces:
+        face.select_set(False)
+    boundary = [edge for edge in bm.edges if len(edge.link_faces) == 1]
+    for edge in boundary:
+        edge.select_set(True)
+    bm.select_mode = {"EDGE"}
+    bpy.context.tool_settings.mesh_select_mode = (False, True, False)
+    bm.select_flush_mode()
+    bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=False)
+    result = bpy.ops.mesh.quad_transition_apply(
+        transition="THREE_TO_ONE",
+        relax_iterations=8,
+        conform_surface=True,
+    )
+    bm = bmesh.from_edit_mesh(obj.data)
+    if result != {"FINISHED"} or len(bm.faces) != 10 or any(
+        len(face.verts) != 4 for face in bm.faces
+    ):
+        raise AssertionError("Closed selected edge boundary was not replaced")
+    print("QT_TRANSITION_INPUT_PASS mixed_faces=1 closed_edge_boundary=1")
 
 
 def main() -> None:
@@ -531,15 +680,18 @@ def main() -> None:
         assert_transition("ONE_TO_TWO", 2, 1, 3, 1)
         assert_edge_flow_step_browser()
         assert_side_to_side_strip_order()
-        assert_edge_flow_pole_endpoints()
+        assert_quad_flow_on_transition()
         assert_example_plane()
+        assert_repair_operators()
+        assert_mixed_and_edge_boundary_transition_inputs()
         assert_subdivision_preview()
         assert_external_projection_target()
         assert_invalid_selection_is_unchanged()
         assert_shape_key_is_unchanged()
         print(
             "QT_BLENDER_SMOKE_PASS patterns=13 rejection_cases=2 "
-            "preview=1 external_projection=1 edge_flow=3 example_plane=1"
+            "preview=1 external_projection=1 quad_flow=3 example_atlas=1 "
+            "repair=5 boundary_input=2"
         )
     finally:
         clear_scene()

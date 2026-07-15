@@ -48,11 +48,11 @@ OUTPUT_DIR = (
 )
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_NAMES = {
-    "before": "TopologyTransitions-01-select-patch.png",
-    "after": "TopologyTransitions-02-five-to-three-result.png",
-    "flow": "TopologyTransitions-03-edge-flow-scroll.png",
-    "pole": "TopologyTransitions-04-flow-termination.png",
-    "example": "TopologyTransitions-05-example-plane-strip.png",
+    "before": "01-select-patch.png",
+    "after": "02-five-to-three-result.png",
+    "flow": "03-edge-flow-scroll.png",
+    "pole": "04-flow-termination.png",
+    "example": "05-example-plane-strip.png",
 }
 
 
@@ -182,11 +182,11 @@ def setup_transition(
         else "SELECT A 5-FACE-WIDE QUAD PATCH"
     )
     subtitle = subtitle or "BOUNDARY STAYS PINNED  •  ALL QUADS"
-    create_text(title, (0.0, 1.75, 0.04), 0.34)
+    create_text(title, (0.0, 1.75, 0.04), 0.22 if len(title) > 32 else 0.34)
     create_text(
         subtitle,
         (0.0, -1.75, 0.04),
-        0.25,
+        0.18 if len(subtitle) > 36 else 0.25,
     )
     create_grid("FiveToThree", 5, 2)
     settings = bpy.context.scene.topology_transitions
@@ -245,20 +245,23 @@ def setup_torus_flow() -> None:
         face.select_set(False)
     bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=False)
     settings = bpy.context.scene.topology_transitions
-    settings.flow_mode = "TOPOLOGY"
     settings.flow_scope = "ALL"
     settings.flow_sort = "SIDE_TO_SIDE"
     settings.flow_min_edges = 4
     settings.flow_show_neighbors = True
     settings.flow_focus_view = True
-    settings.flow_index = 0
+    session = build_flow_session(bpy.context)
+    settings.flow_index = max(
+        range(len(session.flows)),
+        key=lambda index: session.flows[index].quad_count,
+    )
 
 
 def setup_pole_flow() -> None:
     setup_transition(
         apply=True,
-        title="EDGE FLOW TERMINATES AT AN N-POLE",
-        subtitle="MAGENTA ENDPOINT  •  CYAN PARALLEL FLOWS",
+        title="QUAD FACE FLOW THROUGH A TRANSITION",
+        subtitle="ONE-QUAD-WIDE BAND  •  CYAN PARALLEL BANDS",
     )
     bm = bmesh.from_edit_mesh(bpy.context.edit_object.data)
     for vertex in bm.verts:
@@ -273,23 +276,15 @@ def setup_pole_flow() -> None:
         destructive=False,
     )
     settings = bpy.context.scene.topology_transitions
-    settings.flow_mode = "TOPOLOGY"
     settings.flow_scope = "ALL"
     settings.flow_sort = "SIDE_TO_SIDE"
     settings.flow_min_edges = 1
     settings.flow_show_neighbors = True
     settings.flow_focus_view = True
     session = build_flow_session(bpy.context)
-    candidates = [
-        index
-        for index, flow in enumerate(session.flows)
-        if any(
-            endpoint is not None and endpoint.label == "N-pole (v3)"
-            for endpoint in (flow.start, flow.end)
-        )
-    ]
     settings.flow_index = max(
-        candidates, key=lambda index: session.flows[index].edge_count
+        range(len(session.flows)),
+        key=lambda index: session.flows[index].quad_count,
     )
 
 
@@ -310,21 +305,6 @@ def setup_example_flow() -> None:
         bpy.context.edit_object.data,
         loop_triangles=False,
         destructive=False,
-    )
-    settings = bpy.context.scene.topology_transitions
-    settings.flow_mode = "TOPOLOGY"
-    settings.flow_scope = "ALL"
-    settings.flow_sort = "SIDE_TO_SIDE"
-    settings.flow_min_edges = 2
-    settings.flow_show_neighbors = True
-    settings.flow_focus_view = True
-    session = build_flow_session(bpy.context)
-    settings.flow_index = max(
-        range(len(session.flows)),
-        key=lambda index: (
-            session.flows[index].edge_count,
-            len(session.quad_faces[index]),
-        ),
     )
 
 
@@ -396,8 +376,7 @@ def setup() -> float:
         invoke_flow(area, region)
     else:
         setup_example_flow()
-        _window, _screen, area, region = configure_view(top=True)
-        invoke_flow(area, region)
+        configure_view(top=True)
     bpy.app.timers.register(lambda: guarded(capture), first_interval=0.8)
     return None
 

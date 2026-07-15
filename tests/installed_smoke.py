@@ -41,6 +41,29 @@ def create_patch():
     return obj
 
 
+def create_triangle_pair():
+    bpy.ops.object.select_all(action="SELECT")
+    bpy.ops.object.delete(use_global=False)
+    mesh = bpy.data.meshes.new("installed_tri_pair_mesh")
+    mesh.from_pydata(
+        ((0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0), (0.0, 1.0, 0.0)),
+        [],
+        ((0, 1, 2), (0, 2, 3)),
+    )
+    mesh.update()
+    obj = bpy.data.objects.new("InstalledTriPair", mesh)
+    bpy.context.collection.objects.link(obj)
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+    bpy.ops.object.mode_set(mode="EDIT")
+    bm = bmesh.from_edit_mesh(mesh)
+    for face in bm.faces:
+        face.select_set(True)
+    bm.select_flush_mode()
+    bmesh.update_edit_mesh(mesh, loop_triangles=True, destructive=False)
+    return obj
+
+
 def main() -> None:
     bpy.ops.preferences.addon_enable(module="topology_transitions")
     import topology_transitions
@@ -53,7 +76,7 @@ def main() -> None:
         )
     if not hasattr(bpy.types.Scene, "topology_transitions"):
         raise AssertionError("Installed add-on did not register scene settings")
-    if topology_transitions.bl_info["version"] != (0, 3, 0):
+    if topology_transitions.bl_info["version"] != (0, 4, 0):
         raise AssertionError(
             f"Installed add-on reported {topology_transitions.bl_info['version']}"
         )
@@ -92,16 +115,22 @@ def main() -> None:
     if (
         example_result != {"FINISHED"}
         or example is None
-        or len(example.data.polygons) != 56
+        or len(example.data.polygons) != 256
+        or example.get("transition_count") != 8
     ):
         raise AssertionError(
             f"Installed example plane returned {example_result} / "
             f"{0 if example is None else len(example.data.polygons)} faces"
         )
+    repair_obj = create_triangle_pair()
+    repair_result = bpy.ops.mesh.quad_transition_solve_selected_tris()
+    repaired = bmesh.from_edit_mesh(repair_obj.data)
+    if repair_result != {"FINISHED"} or len(repaired.faces) != 1:
+        raise AssertionError(f"Installed triangle repair returned {repair_result}")
     print(
         f"QT_INSTALLED_SMOKE_PASS module={loaded} "
         f"selected_quads={len(selected)} flows={flow_count} "
-        f"strip_quads={strip_quads} example_quads=56"
+        f"flow_quads={strip_quads} example_quads=256 transitions=8 repairs=1"
     )
 
 
