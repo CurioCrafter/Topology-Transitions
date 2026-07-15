@@ -1,0 +1,13 @@
+schema_version = "1.0.0"
+
+id = "topology_transitions"
+version = "0.1.0"
+name = "Topology Transitions"
+tagline = "Guided all-quad edge-loop reductions and expansions"
+maintainer = "CurioCrafter"
+type = "add-on"
+
+website = "https://github.com/CurioCrafter/Topology-Transitions"
+tags = ["Mesh", "Modeling"]
+blender_version_min = "4.2.0"
+license = ["SPDX:MIT"]

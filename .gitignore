@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.coverage
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+.tools/
+dist/
+build/
+*.blend1
+*.blend2
