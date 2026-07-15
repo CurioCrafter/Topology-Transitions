@@ -91,6 +91,55 @@ class QT_PT_sidebar(Panel):
         )
         toggle.levels = settings.subdivision_levels
 
+        flow = layout.box()
+        flow.label(text="Edge Flow Scroll")
+        row = flow.row(align=True)
+        row.prop(settings, "flow_mode", text="")
+        row.prop(settings, "flow_scope", text="")
+        row = flow.row(align=True)
+        row.prop(settings, "flow_sort", text="")
+        row.prop(settings, "flow_min_edges")
+        if settings.flow_mode == "GEOMETRIC":
+            flow.prop(settings, "flow_min_alignment")
+        flow.prop(settings, "flow_show_neighbors")
+
+        row = flow.row(align=True)
+        previous = row.operator(
+            "mesh.quad_transition_edge_flow_step", text="Previous", icon="TRIA_LEFT"
+        )
+        previous.direction = -1
+        previous.select_current = True
+        refresh = row.operator("mesh.quad_transition_edge_flow_step", text="Refresh")
+        refresh.direction = 0
+        refresh.select_current = False
+        following = row.operator(
+            "mesh.quad_transition_edge_flow_step", text="Next", icon="TRIA_RIGHT"
+        )
+        following.direction = 1
+        following.select_current = True
+        flow.operator(
+            "mesh.quad_transition_edge_flow_scroll",
+            text="Start Wheel Inspector",
+        )
+
+        if settings.flow_count:
+            metrics = flow.column(align=True)
+            metrics.label(
+                text=f"Flow {settings.flow_index + 1} / {settings.flow_count}  •  "
+                f"{settings.flow_edge_count} edges"
+            )
+            metrics.label(
+                text=f"Length {settings.flow_length:.3f}  •  "
+                f"Alignment {settings.flow_alignment:.0%}"
+            )
+            if settings.flow_closed:
+                metrics.label(text="Closed loop")
+            else:
+                metrics.label(
+                    text=f"{settings.flow_start_label} → {settings.flow_end_label}"
+                )
+            metrics.label(text=f"{settings.flow_neighbor_count} neighboring flows")
+
         note = layout.column(align=True)
         note.label(text="Boundary vertices are always pinned.")
         note.label(text="Triangles and n-gons are never inserted.")

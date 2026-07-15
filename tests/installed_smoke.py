@@ -53,6 +53,10 @@ def main() -> None:
         )
     if not hasattr(bpy.types.Scene, "topology_transitions"):
         raise AssertionError("Installed add-on did not register scene settings")
+    if topology_transitions.bl_info["version"] != (0, 2, 0):
+        raise AssertionError(
+            f"Installed add-on reported {topology_transitions.bl_info['version']}"
+        )
 
     obj = create_patch()
     validation = bpy.ops.mesh.quad_transition_validate(transition="THREE_TO_ONE")
@@ -69,7 +73,21 @@ def main() -> None:
     selected = [face for face in bm.faces if face.select]
     if len(selected) != 7 or any(len(face.verts) != 4 for face in selected):
         raise AssertionError("Installed copy did not generate the expected seven quads")
-    print(f"QT_INSTALLED_SMOKE_PASS module={loaded} selected_quads={len(selected)}")
+    settings = bpy.context.scene.topology_transitions
+    settings.flow_scope = "ALL"
+    settings.flow_min_edges = 1
+    flow_result = bpy.ops.mesh.quad_transition_edge_flow_step(
+        direction=0, select_current=False
+    )
+    if flow_result != {"FINISHED"} or settings.flow_count < 1:
+        raise AssertionError(
+            f"Installed edge-flow browser returned {flow_result} / "
+            f"{settings.flow_count} flows"
+        )
+    print(
+        f"QT_INSTALLED_SMOKE_PASS module={loaded} "
+        f"selected_quads={len(selected)} flows={settings.flow_count}"
+    )
 
 
 if __name__ == "__main__":

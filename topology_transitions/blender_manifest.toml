@@ -1,9 +1,9 @@
 schema_version = "1.0.0"
 
 id = "topology_transitions"
-version = "0.1.0"
+version = "0.2.0"
 name = "Topology Transitions"
-tagline = "Guided all-quad edge-loop reductions and expansions"
+tagline = "Guided quad transitions and edge-flow inspection"
 maintainer = "CurioCrafter"
 type = "add-on"
 

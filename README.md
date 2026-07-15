@@ -1,8 +1,8 @@
 # Topology Transitions
 
-Topology Transitions is a Blender add-on for rebuilding a selected rectangular quad patch with a guided edge-loop reduction or expansion. It automates deterministic connectivity while leaving the artistic decision—where the poles belong—under your control.
+Topology Transitions is a Blender add-on for rebuilding a selected rectangular quad patch with a guided edge-loop reduction or expansion, then inspecting how edge flows travel through the result. It automates deterministic connectivity while leaving the artistic decision—where the poles belong—under your control.
 
-The first release supports:
+It supports:
 
 - 5 ↔ 3
 - 3 ↔ 1
@@ -15,8 +15,19 @@ The first release supports:
 - pinned-boundary relaxation
 - non-destructive Catmull-Clark preview
 - validation before mutation and rollback on apply-time failure
+- a wheel-driven edge-flow inspector with loop metrics, endpoints, and neighboring-flow overlays
 
 The operator never silently inserts triangles or n-gons.
+
+## What it does
+
+Select a rectangular all-quad patch whose width matches the larger loop count. The panel makes the selection contract and transition settings visible before any mesh data changes.
+
+![A five-face-wide quad patch selected beside the Topology Transitions panel](docs/images/01-select-patch.png)
+
+Applying the 5 to 3 pattern replaces only the selected interior, keeps its outside boundary pinned, and creates two guided N-poles without triangles or n-gons.
+
+![The completed five-to-three all-quad transition with its two N-poles selected](docs/images/02-five-to-three-result.png)
 
 ## Install
 
@@ -38,6 +49,25 @@ The panel appears in **3D View → Sidebar → Quad Transition**.
 7. Toggle the Catmull-Clark preview to inspect the subdivided flow.
 
 Blender's **Adjust Last Operation** panel can be used immediately after applying a transition. Normal Blender Undo is also supported.
+
+## Edge Flow Scroll
+
+In Edit Mode, open **Edge Flow Scroll** and choose **Start Wheel Inspector**. The modal inspector discovers flows across the active mesh and lets you browse them without changing the current selection until you confirm.
+
+![The edge-flow inspector browsing a closed loop on a torus](docs/images/03-edge-flow-scroll.png)
+
+- **Orange** is the current edge flow.
+- **Cyan** shows flows that share faces with it.
+- **Magenta** marks open endpoints, including boundaries and extraordinary vertices.
+- **Mouse wheel / arrow keys** browse; **Home / End** jump to the first or last flow.
+- **Enter** selects the current flow and exits; **S** selects it and keeps browsing.
+- **N** toggles neighboring flows; **Esc / right-click** restores the original selection.
+
+**Quad Topology** follows opposite edges through regular valence-four quad vertices and stops at boundaries or poles. **Geometric** can continue through extraordinary vertices by choosing the straightest available continuation. Use **All Visible** to inspect the full mesh or **Selected Edges** to isolate a region. Flows can be ordered by length, smoothness, or stable index, filtered by minimum edge count, and prevented from pairing across turns below the alignment threshold.
+
+![An open edge flow terminating at an N-pole created by a five-to-three transition](docs/images/04-flow-termination.png)
+
+The HUD and sidebar report the flow number, edge count, world-space length, alignment, closed/open state, endpoint classifications, and neighboring-flow count. See [docs/EDGE_FLOW_SCROLL.md](docs/EDGE_FLOW_SCROLL.md) for the discovery rules and control reference.
 
 ## Selection contract
 
@@ -68,6 +98,18 @@ For 1 ↔ 2, quad parity requires one compensating edge on a side boundary. **Po
 | Projection Target | Uses another mesh instead of the original patch for nearest-surface projection. |
 | Preview Levels | Sets the viewport level of the add-on's Catmull-Clark modifier. |
 
+### Edge-flow controls
+
+| Control | Effect |
+| --- | --- |
+| Flow Mode | Uses strict quad-topology continuation or geometric straightest continuation. |
+| Scope | Discovers flows across all visible edges or only selected edges. |
+| Order | Sorts flows by length, smoothness, or stable mesh index. |
+| Minimum Edges | Hides short flow fragments. |
+| Pair Threshold | Prevents two edges from being paired when their continuation is below the chosen straightness. |
+| Show Neighbors | Draws flows sharing faces with the current flow in cyan. |
+| Previous / Refresh / Next | Steps through flows without entering the modal wheel inspector. |
+
 ## Safety and guarantees
 
 For every accepted operation, the add-on checks:
@@ -88,6 +130,7 @@ Meshes with shape keys are rejected rather than modified because interpolating n
 - Nearest-surface projection can choose the wrong sheet on tightly overlapping geometry. Use an explicit projection target or disable conformity in that situation.
 - Compound reductions such as 9 → 5 are not yet chained automatically.
 - Multi-object Edit Mode is rejected; edit one mesh data-block at a time.
+- Quad Topology intentionally stops at poles; Geometric mode is a directional heuristic and can make a different choice on ambiguous, symmetric junctions.
 
 ## Development
 
@@ -104,6 +147,14 @@ Headless Blender smoke:
 blender.exe --background --factory-startup --python tests\blender_smoke.py
 ```
 
+Recreate the documentation screenshots in a normal Blender window:
+
+```powershell
+blender.exe --factory-startup --python scripts\capture_docs.py -- --shot flow
+```
+
+Valid shot names are `before`, `after`, `flow`, and `pole`. The originals are saved to the Windows **Pictures\Screenshots** folder before curated copies are added to `docs/images`.
+
 Build the installable ZIP:
 
 ```powershell
@@ -117,9 +168,13 @@ The smoke requires the explicit marker `QT_BLENDER_SMOKE_PASS`; a zero process e
 - `topology_transitions/core.py` builds and validates Blender-independent quad graphs.
 - `topology_transitions/mesh_ops.py` validates and partitions Edit Mode selections.
 - `topology_transitions/operators.py` fits, projects, applies, verifies, and rolls back BMesh changes.
+- `topology_transitions/edge_flows.py` discovers and measures mesh-independent flow chains.
+- `topology_transitions/flow_ops.py` adapts Edit Mode BMesh data and owns the modal viewport overlay.
 - `topology_transitions/ui.py` exposes the workflow in the 3D View sidebar.
 - `tests/test_core.py` proves graph invariants with standard Python.
+- `tests/test_edge_flows.py` proves flow discovery, filtering, poles, and neighborhood relationships.
 - `tests/blender_smoke.py` proves behavior inside Blender.
+- `scripts/capture_docs.py` reproducibly creates the real Blender documentation captures.
 
 The topology and parity derivation is documented in [docs/TOPOLOGY.md](docs/TOPOLOGY.md).
 

@@ -19,6 +19,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import topology_transitions  # noqa: E402
+from topology_transitions.flow_ops import build_flow_session  # noqa: E402
 from topology_transitions.operators import _make_template_and_layout  # noqa: E402
 
 PRESETS = (
@@ -360,6 +361,73 @@ def assert_subdivision_preview() -> None:
     print("QT_PREVIEW_PASS levels=2")
 
 
+def assert_edge_flow_step_browser() -> None:
+    clear_scene()
+    obj, _columns, _rows = create_grid("edge_flow_grid", 4, 3)
+    settings = bpy.context.scene.topology_transitions
+    settings.flow_mode = "TOPOLOGY"
+    settings.flow_scope = "ALL"
+    settings.flow_sort = "LONGEST"
+    settings.flow_min_edges = 2
+    result = bpy.ops.mesh.quad_transition_edge_flow_step(
+        direction=0, select_current=True
+    )
+    if result != {"FINISHED"}:
+        raise AssertionError(f"Edge flow refresh returned {result}")
+    if settings.flow_count != 5 or settings.flow_edge_count != 4:
+        raise AssertionError(
+            f"Expected five grid flows led by four edges, got "
+            f"{settings.flow_count} / {settings.flow_edge_count}"
+        )
+    bm = bmesh.from_edit_mesh(obj.data)
+    selected_edges = [edge for edge in bm.edges if edge.select]
+    if len(selected_edges) != 4:
+        raise AssertionError(
+            f"Expected current flow to select four edges, found {len(selected_edges)}"
+        )
+    result = bpy.ops.mesh.quad_transition_edge_flow_step(
+        direction=1, select_current=True
+    )
+    if result != {"FINISHED"} or settings.flow_index != 1:
+        raise AssertionError("Edge flow next step did not advance to index one")
+
+    settings.flow_scope = "SELECTED"
+    settings.flow_min_edges = 1
+    result = bpy.ops.mesh.quad_transition_edge_flow_step(
+        direction=0, select_current=False
+    )
+    if result != {"FINISHED"} or settings.flow_count != 1:
+        raise AssertionError("Selected scope did not isolate the current flow")
+    print("QT_EDGE_FLOW_STEP_PASS all_flows=5 selected_scope=1 current_edges=4")
+
+
+def assert_edge_flow_pole_endpoints() -> None:
+    clear_scene()
+    create_grid("edge_flow_transition", 5, 2)
+    result = bpy.ops.mesh.quad_transition_apply(
+        transition="FIVE_TO_THREE",
+        relax_iterations=8,
+        conform_surface=True,
+    )
+    if result != {"FINISHED"}:
+        raise AssertionError(f"Transition setup returned {result}")
+    settings = bpy.context.scene.topology_transitions
+    settings.flow_mode = "TOPOLOGY"
+    settings.flow_scope = "ALL"
+    settings.flow_sort = "LONGEST"
+    settings.flow_min_edges = 1
+    session = build_flow_session(bpy.context)
+    labels = {
+        endpoint.label
+        for flow in session.flows
+        for endpoint in (flow.start, flow.end)
+        if endpoint is not None
+    }
+    if "N-pole (v3)" not in labels:
+        raise AssertionError(f"Flow endpoints did not identify N-poles: {labels}")
+    print(f"QT_EDGE_FLOW_POLE_PASS flows={len(session.flows)} labels={sorted(labels)}")
+
+
 def main() -> None:
     topology_transitions.register()
     try:
@@ -369,13 +437,15 @@ def main() -> None:
         assert_transition("ONE_TO_TWO", 2, 2, 5, 1, mirror=True)
         assert_transition("FIVE_TO_THREE", 5, 1, 11, 2)
         assert_transition("ONE_TO_TWO", 2, 1, 3, 1)
+        assert_edge_flow_step_browser()
+        assert_edge_flow_pole_endpoints()
         assert_subdivision_preview()
         assert_external_projection_target()
         assert_invalid_selection_is_unchanged()
         assert_shape_key_is_unchanged()
         print(
             "QT_BLENDER_SMOKE_PASS patterns=13 rejection_cases=2 "
-            "preview=1 external_projection=1"
+            "preview=1 external_projection=1 edge_flow=2"
         )
     finally:
         clear_scene()
