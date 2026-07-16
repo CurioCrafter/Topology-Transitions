@@ -18,6 +18,7 @@ from pathlib import Path
 
 import bmesh
 import bpy
+from mathutils import Vector
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -25,7 +26,15 @@ if str(ROOT) not in sys.path:
 
 import topology_transitions  # noqa: E402
 from topology_transitions import ui as ui_module  # noqa: E402
+from topology_transitions.bake_preview_ops import (  # noqa: E402
+    build_bake_ray_preview,
+)
 from topology_transitions.flow_ops import build_flow_session  # noqa: E402
+from topology_transitions.ribbon_ops import grow_ribbon_from_stroke  # noqa: E402
+from topology_transitions.surface_ops import (  # noqa: E402
+    inspect_bake_readiness,
+    toggle_bake_cage,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -33,7 +42,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--shot",
-        choices=("before", "after", "flow", "pole", "example"),
+        choices=("before", "after", "flow", "pole", "example", "ribbon", "bake"),
         required=True,
     )
     parser.add_argument("--output-dir", type=Path)
@@ -53,6 +62,8 @@ OUTPUT_NAMES = {
     "flow": "03-edge-flow-scroll.png",
     "pole": "04-flow-termination.png",
     "example": "05-example-plane-strip.png",
+    "ribbon": "06-connected-multi-strip.png",
+    "bake": "07-bake-ray-preview.png",
 }
 
 
@@ -310,6 +321,168 @@ def setup_example_flow() -> None:
     )
 
 
+def create_material(name: str, color: tuple[float, float, float, float]):
+    material = bpy.data.materials.new(name)
+    material.diffuse_color = color
+    return material
+
+
+def setup_connected_ribbon() -> None:
+    clear_scene()
+    create_text(
+        "ONE WELDED 5-LANE SHEET  ->  5 TO 3 TRANSITION",
+        (2.5, 11.8, 0.06),
+        0.26,
+    )
+    create_text(
+        "EXACT BOTTOM BOUNDARY  |  OUTPUT CHAIN READY TO CONTINUE",
+        (2.5, -1.15, 0.06),
+        0.18,
+    )
+    target_mesh = bpy.data.meshes.new("RibbonSurface_mesh")
+    target_mesh.from_pydata(
+        ((-3, -2, -0.03), (8, -2, -0.03), (8, 13, -0.03), (-3, 13, -0.03)),
+        (),
+        ((0, 1, 2, 3),),
+    )
+    target_mesh.update()
+    target = bpy.data.objects.new("Ribbon Surface Target", target_mesh)
+    bpy.context.collection.objects.link(target)
+    target.data.materials.append(
+        create_material("RibbonTarget", (0.035, 0.045, 0.065, 1.0))
+    )
+
+    lanes = 5
+    vertices = [
+        (float(x), float(y), 0.0)
+        for y in range(2)
+        for x in range(lanes + 1)
+    ]
+    faces = [
+        (x, x + 1, lanes + x + 2, lanes + x + 1)
+        for x in range(lanes)
+    ]
+    mesh = bpy.data.meshes.new("ConnectedRibbon_mesh")
+    mesh.from_pydata(vertices, (), faces)
+    mesh.update()
+    low = bpy.data.objects.new("Connected Ribbon", mesh)
+    bpy.context.collection.objects.link(low)
+    low.data.materials.append(
+        create_material("ConnectedRibbon", (0.03, 0.42, 0.86, 1.0))
+    )
+    low.show_in_front = True
+    bpy.ops.object.select_all(action="DESELECT")
+    low.select_set(True)
+    bpy.context.view_layer.objects.active = low
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.context.tool_settings.mesh_select_mode = (False, True, False)
+    bm = bmesh.from_edit_mesh(mesh)
+    bm.select_mode = {"EDGE"}
+    for edge in bm.edges:
+        edge.select_set(
+            all(abs(vertex.co.y - 1.0) < 1.0e-6 for vertex in edge.verts)
+        )
+    bm.select_flush_mode()
+    bmesh.update_edit_mesh(mesh, loop_triangles=True, destructive=False)
+
+    grow_ribbon_from_stroke(
+        bpy.context,
+        [
+            Vector((2.5, 2.7, -0.03)),
+            Vector((2.75, 4.7, -0.03)),
+            Vector((2.55, 6.8, -0.03)),
+        ],
+        [Vector((0, 0, 1))] * 3,
+        layout="UNIFORM",
+        transition="FIVE_TO_THREE",
+        segments=6,
+        width_scale=1.0,
+        pole_side="CENTER",
+        mirror=False,
+        pole_spacing=1.0,
+        target=target,
+        project_limit=1.0,
+    )
+    grow_ribbon_from_stroke(
+        bpy.context,
+        [Vector((2.55, 8.6, -0.03)), Vector((2.65, 10.5, -0.03))],
+        [Vector((0, 0, 1))] * 2,
+        layout="TRANSITION",
+        transition="FIVE_TO_THREE",
+        segments=3,
+        width_scale=0.9,
+        pole_side="CENTER",
+        mirror=False,
+        pole_spacing=1.0,
+        target=target,
+        project_limit=1.0,
+    )
+    settings = bpy.context.scene.topology_transitions
+    settings.surface_target = target
+    settings.draw_layout = "TRANSITION"
+    settings.transition = "FIVE_TO_THREE"
+    settings.draw_segments = 3
+    settings.draw_width_scale = 0.9
+
+
+def setup_bake_preview() -> None:
+    clear_scene()
+    create_text(
+        "BAKE ENVELOPE + SAMPLED SOURCE RAYS",
+        (0.0, 3.9, 0.6),
+        0.3,
+    )
+    low = create_grid("BakePreviewLow", 5, 6)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    low.data.uv_layers.new(name="UVMap")
+    low.color = (0.03, 0.35, 0.95, 1.0)
+    low.data.materials.append(
+        create_material("BakeLow", (0.03, 0.35, 0.95, 1.0))
+    )
+    bake_material = low.data.materials[0]
+    bake_material.use_nodes = True
+    image_node = bake_material.node_tree.nodes.new("ShaderNodeTexImage")
+    image_node.image = bpy.data.images.new("Bake Preview Target", 64, 64)
+    bake_material.node_tree.nodes.active = image_node
+
+    high_mesh = bpy.data.meshes.new("BakeHigh_mesh")
+    high_mesh.from_pydata(
+        (
+            (-1.25, -2.6, 0.22),
+            (1.25, -2.6, 0.22),
+            (1.25, 2.6, 0.22),
+            (-1.25, 2.6, 0.22),
+        ),
+        (),
+        ((0, 1, 2, 3),),
+    )
+    high_mesh.update()
+    high = bpy.data.objects.new("Selected High Source", high_mesh)
+    bpy.context.collection.objects.link(high)
+    high.color = (0.12, 0.15, 0.2, 1.0)
+    high.data.materials.append(
+        create_material("BakeHigh", (0.12, 0.15, 0.2, 1.0))
+    )
+    bpy.ops.object.select_all(action="DESELECT")
+    low.select_set(True)
+    high.select_set(True)
+    bpy.context.view_layer.objects.active = low
+    cage = toggle_bake_cage(bpy.context, low, distance=0.45)["cage"]
+    cage.color = (1.0, 0.16, 0.02, 1.0)
+    build_bake_ray_preview(
+        bpy.context,
+        low,
+        max_ray_distance=0.45,
+        use_cage=True,
+        sample_limit=100,
+    )
+    inspect_bake_readiness(bpy.context, use_cage=True, cage=cage)
+    settings = bpy.context.scene.topology_transitions
+    settings.bake_use_cage = True
+    settings.bake_cage_distance = 0.45
+    settings.bake_ray_samples = 100
+
+
 def invoke_flow(area, region) -> None:
     window = bpy.context.window_manager.windows[0]
     with bpy.context.temp_override(
@@ -376,9 +549,16 @@ def setup() -> float:
         setup_pole_flow()
         _window, _screen, area, region = configure_view(top=True)
         invoke_flow(area, region)
-    else:
+    elif ARGS.shot == "example":
         setup_example_flow()
         configure_view(top=True)
+    elif ARGS.shot == "ribbon":
+        setup_connected_ribbon()
+        configure_view(top=True)
+    else:
+        setup_bake_preview()
+        _window, _screen, area, _region = configure_view(top=False)
+        area.spaces.active.shading.color_type = "OBJECT"
     bpy.app.timers.register(lambda: guarded(capture), first_interval=0.8)
     return None
 

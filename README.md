@@ -1,8 +1,9 @@
 # Topology Transitions
 
 Topology Transitions is a Blender add-on for building guided all-quad loop
-reductions/expansions, repairing selected triangles and n-gons, reading broad
-quad-flow regions, and pinpointing open or non-manifold mesh areas.
+reductions/expansions, drawing several welded quad lanes over a source surface,
+repairing selected triangles and n-gons, reading broad quad-flow regions, and
+preparing shrinkwrapped retopology for selected-to-active baking.
 
 Supported transition directions are 5 -> 3, 3 -> 5, 3 -> 1, 1 -> 3,
 4 -> 2, 2 -> 4, 1 -> 2, and 2 -> 1. Pole placement, mirroring, surface
@@ -16,6 +17,54 @@ conformity, relaxation, and Catmull-Clark preview remain user-controlled.
 2. In Blender 4.2 or newer, open **Edit -> Preferences -> Get Extensions**.
 3. Open the top-right menu, choose **Install from Disk**, and select the ZIP.
 4. Open **3D View -> Sidebar -> Quad Transition**.
+
+## Draw a connected multi-strip
+
+This is a boundary-driven alternative to drawing several independent quad
+strips:
+
+1. Keep the high-poly source as a separate visible mesh and choose it as
+   **Surface Target**.
+2. On the low-poly mesh in Edit Mode, select one open boundary edge chain. Each
+   selected edge is one lane.
+3. Choose **Connected Multi-Strip** for a uniform sheet or **Transition Ribbon**
+   for one of the eight real density patterns.
+4. Click **Draw Connected Multi-Strip**, drag LMB over the target, adjust rows
+   with the wheel and width with Shift+wheel, then press Enter.
+
+The selected chain is reused as the exact first row, so the new faces weld to
+the bottom quads instead of overlapping them. All lanes share their cross-row
+vertices and commit as one connected all-quad mesh. The far boundary is selected
+afterward for immediate continuation. Cyan filled preview cells show the entire
+sheet; magenta cells mark transition poles.
+
+The draw is transactional and target-specific. It cancels on a projection miss,
+folded/zero-area quad, invalid pole, non-manifold edge, hidden/interior/branched
+anchor chain, shape keys, or multi-object Edit Mode.
+
+![Five welded lanes continuing into a real five-to-three transition](docs/images/06-connected-multi-strip.png)
+
+## Surface conformity and bake preview
+
+**Set Up Live Shrinkwrap** creates or updates one named modifier against the
+same target. Nearest Surface, Target Normal Project, and bidirectional Local Z
+Project presets are exposed with offset and projection-limit controls.
+
+For selected-to-active baking:
+
+- **Toggle Bake Cage** shows an orange exact-topology inflated cage and detects
+  when later edits make it stale.
+- **Toggle Ray Preview** draws sampled high-source hits in green and misses in
+  red, then reports coverage plus median and 95th-percentile hit distance.
+- **Inspect Readiness** checks source selection, UVs, active bake images,
+  transforms, winding, non-manifold geometry, and cage topology parity.
+- **Configure Bake** prepares Cycles tangent-normal or displacement settings.
+  It never starts a bake or overwrites an image.
+
+![Orange exact-topology cage with green source hits and red misses](docs/images/07-bake-ray-preview.png)
+
+The full workflow and implementation boundaries are documented in
+[Connected Multi-Strip, Surface Conformity, and Baking](docs/CONNECTED_MULTI_STRIP_AND_BAKING.md).
 
 ## Apply a transition
 
@@ -118,6 +167,10 @@ that every boundary is a mistake.
 
 | Control | Effect |
 | --- | --- |
+| Ribbon Layout | Draws a uniform connected sheet or a real loop-count transition. |
+| Surface Target | Explicit high-poly mesh used for stroke hits and vertex projection. |
+| Length Segments / Width Scale | Controls shared cross-rows and boundary-relative width. |
+| Flip Width | Reverses which anchor endpoint is treated as the left side. |
 | Transition | Incoming and outgoing loop counts. |
 | Patch Axis | Uses the active boundary edge or the alternate patch axis. |
 | Reverse Flow | Swaps incoming and outgoing patch sides. |
@@ -129,6 +182,8 @@ that every boundary is a mistake.
 | Scope | Uses all visible faces or only selected faces. |
 | Show Full Map | Colors all broad regions while one remains active. |
 | Focus View | Frames the active region/band after each step. |
+| Shrinkwrap Method / Offset | Maintains non-destructive source conformity while editing. |
+| Bake Cage / Ray Preview | Visualizes the envelope and sampled source reach before baking. |
 
 ## Safety and limitations
 
@@ -141,6 +196,10 @@ that every boundary is a mistake.
   operator reports how many splits and surrounding quads it changed.
 - Surface projection can choose the wrong sheet on tightly overlapping meshes;
   use an explicit projection target or disable conformity.
+- The bake-ray overlay is a sampled diagnostic, not a replacement for the final
+  Cycles bake. Green coverage does not prove UV or material correctness.
+- New ribbon loops currently receive default UV/color/custom-data values and
+  should be unwrapped before baking.
 - Compound reductions such as 9 -> 5 are not automatically chained.
 - Multi-object Edit Mode is rejected; edit one mesh data-block at a time.
 
@@ -165,6 +224,10 @@ Key modules:
 - `quad_repair.py` / `repair_ops.py`: local and propagated all-quad repair;
 - `quad_flows.py` / `flow_ops.py`: pole-bounded regions, face bands, and overlay;
 - `manifold.py` / `manifold_ops.py`: pure diagnostics and Blender selection;
+- `ribbon.py` / `ribbon_ops.py`: connected multi-lane plans, surface fitting,
+  modal preview, and transactional BMesh growth;
+- `surface_ops.py`: live Shrinkwrap, exact-topology cages, and bake readiness;
+- `bake_preview_ops.py`: sampled green-hit/red-miss bake-ray visualization;
 - `examples.py`: true unequal-density atlas generation.
 
 The topology derivation is in [docs/TOPOLOGY.md](docs/TOPOLOGY.md), and detailed

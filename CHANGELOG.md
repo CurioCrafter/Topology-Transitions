@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.6.0 - 2026-07-16
+
+- Added **Draw Connected Multi-Strip**: one surface stroke grows every selected
+  open-boundary edge as a lane in one welded quad sheet, reusing the exact
+  bottom vertices and selecting the far boundary for immediate continuation.
+- Added a **Transition Ribbon** layout that draws all eight existing pole-based
+  density patterns over an explicit target, with cyan filled quad preview,
+  magenta transition cells, width/length controls, width flipping, and rollback
+  on invalid surface or topology.
+- Added idempotent live Shrinkwrap setup with runtime-compatible Nearest Surface,
+  Target Normal Project, and directional Project presets.
+- Added an orange exact-topology bake cage with topology, geometry, and transform
+  staleness detection, plus sampled green-hit/red-miss bake-ray visualization
+  with coverage and distance statistics.
+- Added selected-to-active bake readiness checks and safe Cycles configuration
+  for tangent normals or displacement; preparation never starts a bake.
+- Added pure topology tests, Blender welded-ribbon tests, Shrinkwrap/cage/readiness
+  tests, bake-ray hit/miss tests, and research-backed workflow documentation.
+
 ## 0.5.0 - 2026-07-16
 
 - Rebuilt **Quad Flow Regions** around interior extraordinary vertices: pole

@@ -40,6 +40,128 @@ class QT_PT_sidebar(Panel):
         layout = self.layout
         settings = context.scene.topology_transitions
 
+        draw = layout.box()
+        draw.label(text="Draw Connected Retopology")
+        draw.label(text="1. Select one open bottom boundary chain", icon="EDGESEL")
+        draw.label(text="Each selected edge becomes one connected lane")
+        draw.prop(settings, "surface_target")
+        draw.prop(settings, "draw_layout", text="")
+        if settings.draw_layout == "TRANSITION":
+            draw.prop(settings, "transition")
+            row = draw.row(align=True)
+            row.prop(settings, "pole_side", text="Pole")
+            row.prop(settings, "mirror")
+            draw.prop(settings, "pole_spacing")
+        row = draw.row(align=True)
+        row.prop(settings, "draw_segments")
+        row.prop(settings, "draw_width_scale")
+        draw.prop(settings, "draw_flip_width")
+        draw.prop(settings, "draw_project_limit")
+        operator = draw.operator(
+            "mesh.quad_transition_draw_multi_strip",
+            text="Draw Connected Multi-Strip",
+            icon="GREASEPENCIL",
+        )
+        operator.layout = settings.draw_layout
+        operator.transition = settings.transition
+        operator.segments = settings.draw_segments
+        operator.width_scale = settings.draw_width_scale
+        operator.flip_width = settings.draw_flip_width
+        operator.pole_side = settings.pole_side
+        operator.mirror = settings.mirror
+        operator.pole_spacing = settings.pole_spacing
+        operator.target_name = (
+            settings.surface_target.name if settings.surface_target else ""
+        )
+        operator.project_limit = settings.draw_project_limit
+        draw.label(text="LMB draw; wheel rows; Shift+wheel width", icon="INFO")
+
+        surface = layout.box()
+        surface.label(text="Surface Conform & Bake Preview")
+        surface.prop(settings, "shrinkwrap_method", text="")
+        surface.prop(settings, "shrinkwrap_offset")
+        shrinkwrap = surface.operator(
+            "object.quad_transition_setup_shrinkwrap",
+            text="Set Up Live Shrinkwrap",
+            icon="MOD_SHRINKWRAP",
+        )
+        shrinkwrap.target_name = (
+            settings.surface_target.name if settings.surface_target else ""
+        )
+        shrinkwrap.wrap_method = settings.shrinkwrap_method
+        shrinkwrap.offset = settings.shrinkwrap_offset
+        shrinkwrap.project_limit = settings.draw_project_limit
+
+        surface.separator()
+        surface.label(text="Select high source(s); keep low mesh active")
+        row = surface.row(align=True)
+        row.prop(settings, "bake_type", text="")
+        row.prop(settings, "bake_margin")
+        surface.prop(settings, "bake_use_cage")
+        if settings.bake_use_cage:
+            surface.prop(settings, "bake_cage_distance")
+            row = surface.row(align=True)
+            cage = row.operator(
+                "object.quad_transition_toggle_bake_cage",
+                text="Toggle Bake Cage",
+                icon="SHADING_WIRE",
+            )
+            cage.distance = settings.bake_cage_distance
+            rebuild = row.operator(
+                "object.quad_transition_toggle_bake_cage",
+                text="Rebuild",
+                icon="FILE_REFRESH",
+            )
+            rebuild.distance = settings.bake_cage_distance
+            rebuild.force_rebuild = True
+        else:
+            surface.prop(settings, "bake_max_ray_distance")
+        surface.prop(settings, "bake_ray_samples")
+        row = surface.row(align=True)
+        rays = row.operator(
+            "object.quad_transition_toggle_bake_rays",
+            text="Toggle Ray Preview",
+            icon="HIDE_OFF",
+        )
+        rays.max_ray_distance = (
+            settings.bake_cage_distance
+            if settings.bake_use_cage
+            else settings.bake_max_ray_distance
+        )
+        rays.use_cage = settings.bake_use_cage
+        rays.sample_limit = settings.bake_ray_samples
+        refresh_rays = row.operator(
+            "object.quad_transition_toggle_bake_rays",
+            text="Refresh",
+            icon="FILE_REFRESH",
+        )
+        refresh_rays.max_ray_distance = rays.max_ray_distance
+        refresh_rays.use_cage = settings.bake_use_cage
+        refresh_rays.sample_limit = settings.bake_ray_samples
+        refresh_rays.force_rebuild = True
+        row = surface.row(align=True)
+        inspect = row.operator(
+            "object.quad_transition_inspect_bake",
+            text="Inspect Readiness",
+            icon="VIEWZOOM",
+        )
+        inspect.use_cage = settings.bake_use_cage
+        configure = row.operator(
+            "object.quad_transition_configure_bake",
+            text="Configure Bake",
+            icon="RENDER_STILL",
+        )
+        configure.bake_type = settings.bake_type
+        configure.margin = settings.bake_margin
+        configure.max_ray_distance = settings.bake_max_ray_distance
+        configure.use_cage = settings.bake_use_cage
+        bake_status = context.scene.get(
+            "topology_transitions_bake_status", "Bake readiness not inspected"
+        )
+        surface.label(text=str(bake_status), icon="INFO")
+        surface.label(text="Green = sampled hit; red = miss (diagnostic)")
+        surface.label(text="Configuration never starts or overwrites a bake")
+
         example = layout.box()
         example.label(text="True Density Examples")
         example.operator(

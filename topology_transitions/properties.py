@@ -21,6 +21,128 @@ def _mesh_object_poll(_self, obj: Object) -> bool:
 
 
 class QT_PG_settings(PropertyGroup):
+    draw_layout: EnumProperty(
+        name="Ribbon Layout",
+        description="Grow a uniform connected sheet or draw a density transition",
+        items=(
+            (
+                "UNIFORM",
+                "Connected Multi-Strip",
+                "Every selected boundary edge becomes one welded quad lane",
+            ),
+            (
+                "TRANSITION",
+                "Transition Ribbon",
+                "Draw the chosen loop-count transition along the stroke",
+            ),
+        ),
+        default="UNIFORM",
+    )
+    draw_segments: IntProperty(
+        name="Length Segments",
+        description="Number of shared cross-rows along the drawn surface path",
+        min=1,
+        max=64,
+        default=6,
+    )
+    draw_width_scale: FloatProperty(
+        name="Width Scale",
+        description="Scale the ribbon from the width of the selected bottom boundary",
+        min=0.25,
+        max=4.0,
+        default=1.0,
+    )
+    draw_flip_width: BoolProperty(
+        name="Flip Width",
+        description="Reverse which end of the selected chain is treated as left",
+        default=False,
+    )
+    surface_target: PointerProperty(
+        name="Surface Target",
+        description="Separate high-poly mesh used for drawing and surface conformity",
+        type=Object,
+        poll=_mesh_object_poll,
+    )
+    draw_project_limit: FloatProperty(
+        name="Project Limit",
+        description=(
+            "Maximum nearest-surface distance; zero allows any reachable distance"
+        ),
+        min=0.0,
+        default=0.0,
+        subtype="DISTANCE",
+    )
+    shrinkwrap_method: EnumProperty(
+        name="Shrinkwrap Method",
+        description="How the editable retopology cage follows the surface target",
+        items=(
+            (
+                "NEAREST_SURFACEPOINT",
+                "Nearest Surface",
+                "Fast general-purpose snapping for vertices already near the target",
+            ),
+            (
+                "TARGET_PROJECT",
+                "Target Normal Project",
+                "Smoother target-normal projection for organic surfaces",
+            ),
+            (
+                "PROJECT",
+                "Local Z Project",
+                "Project both ways along the retopology object's local Z axis",
+            ),
+        ),
+        default="NEAREST_SURFACEPOINT",
+    )
+    shrinkwrap_offset: FloatProperty(
+        name="Surface Offset",
+        description="Keep the editable retopology cage above the target surface",
+        default=0.002,
+        precision=4,
+        subtype="DISTANCE",
+    )
+    bake_type: EnumProperty(
+        name="Bake Type",
+        items=(
+            ("NORMAL", "Tangent Normal", "Prepare a tangent-space normal bake"),
+            ("DISPLACEMENT", "Displacement", "Prepare a displacement bake"),
+        ),
+        default="NORMAL",
+    )
+    bake_use_cage: BoolProperty(
+        name="Use Custom Cage",
+        description="Use the exact-topology wire cage instead of ray distance",
+        default=False,
+    )
+    bake_cage_distance: FloatProperty(
+        name="Cage Distance",
+        description="Local normal offset used to visualize the bake envelope",
+        min=0.0,
+        default=0.03,
+        precision=4,
+        subtype="DISTANCE",
+    )
+    bake_max_ray_distance: FloatProperty(
+        name="Max Ray Distance",
+        description="Selected-to-active ray reach when custom cage mode is disabled",
+        min=0.0,
+        default=0.02,
+        subtype="DISTANCE",
+    )
+    bake_margin: IntProperty(
+        name="Bake Margin",
+        description="Pixel padding around UV islands",
+        min=0,
+        max=32767,
+        default=16,
+    )
+    bake_ray_samples: IntProperty(
+        name="Ray Samples",
+        description="Maximum low-poly faces sampled by the bake-ray preview",
+        min=1,
+        max=5000,
+        default=500,
+    )
     transition: EnumProperty(
         name="Transition",
         description="Incoming and outgoing edge-loop counts",

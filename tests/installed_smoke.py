@@ -7,6 +7,7 @@ from pathlib import Path
 
 import bmesh
 import bpy
+from mathutils import Vector
 
 
 def create_patch():
@@ -68,9 +69,58 @@ def create_triangle_pair():
     return obj
 
 
+def create_connected_ribbon_fixture():
+    bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.ops.object.select_all(action="SELECT")
+    bpy.ops.object.delete(use_global=False)
+    lanes = 3
+    target_mesh = bpy.data.meshes.new("installed_ribbon_target_mesh")
+    target_mesh.from_pydata(
+        ((-2, -1, 0.5), (5, -1, 0.5), (5, 7, 0.5), (-2, 7, 0.5)),
+        (),
+        ((0, 1, 2, 3),),
+    )
+    target_mesh.update()
+    target = bpy.data.objects.new("InstalledRibbonTarget", target_mesh)
+    bpy.context.collection.objects.link(target)
+
+    mesh = bpy.data.meshes.new("installed_ribbon_mesh")
+    vertices = [
+        (float(x), float(y), 0.5)
+        for y in range(2)
+        for x in range(lanes + 1)
+    ]
+    faces = [
+        (x, x + 1, lanes + x + 2, lanes + x + 1)
+        for x in range(lanes)
+    ]
+    mesh.from_pydata(vertices, (), faces)
+    mesh.update()
+    low = bpy.data.objects.new("InstalledRibbonLow", mesh)
+    bpy.context.collection.objects.link(low)
+    bpy.context.view_layer.objects.active = low
+    low.select_set(True)
+    target.select_set(False)
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.context.tool_settings.mesh_select_mode = (False, True, False)
+    bm = bmesh.from_edit_mesh(mesh)
+    bm.select_mode = {"EDGE"}
+    for face in bm.faces:
+        face.select_set(False)
+    for edge in bm.edges:
+        edge.select_set(
+            all(abs(vertex.co.y - 1.0) < 1.0e-6 for vertex in edge.verts)
+        )
+    bm.select_flush_mode()
+    bmesh.update_edit_mesh(mesh, loop_triangles=True, destructive=False)
+    return low, target
+
+
 def main() -> None:
     bpy.ops.preferences.addon_enable(module="topology_transitions")
     import topology_transitions
+    from topology_transitions.ribbon_ops import grow_ribbon_from_stroke
+    from topology_transitions.surface_ops import find_bake_cage
 
     expected_root = Path(os.environ["QT_EXPECTED_ADDON_ROOT"]).resolve()
     loaded = Path(topology_transitions.__file__).resolve()
@@ -80,7 +130,7 @@ def main() -> None:
         )
     if not hasattr(bpy.types.Scene, "topology_transitions"):
         raise AssertionError("Installed add-on did not register scene settings")
-    if topology_transitions.bl_info["version"] != (0, 5, 0):
+    if topology_transitions.bl_info["version"] != (0, 6, 0):
         raise AssertionError(
             f"Installed add-on reported {topology_transitions.bl_info['version']}"
         )
@@ -142,11 +192,54 @@ def main() -> None:
     manifold_result = bpy.ops.mesh.quad_transition_check_manifold()
     if manifold_result != {"FINISHED"} or settings.manifold_open_edge_count != 4:
         raise AssertionError("Installed manifold diagnostic missed quad boundary")
+
+    low, target = create_connected_ribbon_fixture()
+    ribbon_stats = grow_ribbon_from_stroke(
+        bpy.context,
+        [Vector((1.5, 3.0, 0.5)), Vector((1.5, 5.0, 0.5))],
+        [Vector((0.0, 0.0, 1.0)), Vector((0.0, 0.0, 1.0))],
+        layout="UNIFORM",
+        transition="THREE_TO_ONE",
+        segments=2,
+        width_scale=1.0,
+        pole_side="CENTER",
+        mirror=False,
+        pole_spacing=1.0,
+        target=target,
+        project_limit=1.0,
+    )
+    ribbon_bm = bmesh.from_edit_mesh(low.data)
+    selected_output = [edge for edge in ribbon_bm.edges if edge.select]
+    if (
+        ribbon_stats["new_faces"] != 6
+        or ribbon_stats["anchor_edges"] != 3
+        or ribbon_stats["output_edges"] != 3
+        or len(selected_output) != 3
+        or len(ribbon_bm.faces) != 9
+    ):
+        raise AssertionError(f"Installed connected ribbon failed: {ribbon_stats}")
+    bpy.ops.object.mode_set(mode="OBJECT")
+    shrinkwrap_result = bpy.ops.object.quad_transition_setup_shrinkwrap(
+        target_name=target.name,
+        wrap_method="NEAREST_SURFACEPOINT",
+        offset=0.001,
+        project_limit=1.0,
+    )
+    cage_result = bpy.ops.object.quad_transition_toggle_bake_cage(distance=0.05)
+    if (
+        shrinkwrap_result != {"FINISHED"}
+        or cage_result != {"FINISHED"}
+        or low.modifiers.get("Topology Transition Shrinkwrap") is None
+        or find_bake_cage(low) is None
+    ):
+        raise AssertionError(
+            f"Installed surface workflow failed: {shrinkwrap_result} / {cage_result}"
+        )
     print(
         f"QT_INSTALLED_SMOKE_PASS module={loaded} "
         f"selected_quads={len(selected)} flows={flow_count} "
         f"flow_quads={strip_quads} example_quads=186 transitions=8 repairs=1 "
-        f"open_edges=4"
+        f"open_edges=4 ribbon_quads=6 shrinkwrap=1 bake_cage=1"
     )
 
 
