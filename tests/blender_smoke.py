@@ -6,6 +6,7 @@ Run with:
 
 from __future__ import annotations
 
+import json
 import math
 import sys
 from pathlib import Path
@@ -365,6 +366,7 @@ def assert_edge_flow_step_browser() -> None:
     clear_scene()
     obj, _columns, _rows = create_grid("edge_flow_grid", 4, 3)
     settings = bpy.context.scene.topology_transitions
+    settings.flow_mode = "FACE_STRIPS"
     settings.flow_scope = "ALL"
     settings.flow_sort = "LONGEST"
     settings.flow_min_edges = 2
@@ -418,6 +420,7 @@ def assert_side_to_side_strip_order() -> None:
     clear_scene()
     create_grid("side_to_side_grid", 4, 3)
     settings = bpy.context.scene.topology_transitions
+    settings.flow_mode = "FACE_STRIPS"
     settings.flow_scope = "ALL"
     settings.flow_sort = "SIDE_TO_SIDE"
     settings.flow_min_edges = 2
@@ -443,11 +446,23 @@ def assert_example_plane() -> None:
     obj = bpy.context.active_object
     if obj is None or obj.name != "TopologyTransitions_Example_Atlas":
         raise AssertionError("Example atlas did not become the active object")
-    if len(obj.data.polygons) != 256 or any(
+    density_metadata = json.loads(obj.get("density_transitions", "[]"))
+    expected_quads = sum(
+        item["top_regular_quads"]
+        + item["transition_quads"]
+        + item["bottom_regular_quads"]
+        for item in density_metadata
+    )
+    if len(density_metadata) != 8 or any(
+        item["incoming"] == item["outgoing"] for item in density_metadata
+    ):
+        raise AssertionError("Example atlas does not record eight unequal densities")
+    if len(obj.data.polygons) != expected_quads or any(
         len(polygon.vertices) != 4 for polygon in obj.data.polygons
     ):
         raise AssertionError(
-            f"Expected 256 atlas quads, found {len(obj.data.polygons)} polygons"
+            f"Expected {expected_quads} density-atlas quads, "
+            f"found {len(obj.data.polygons)} polygons"
         )
     if len(obj.data.materials) != 3:
         raise AssertionError("Example plane did not receive three reference bands")
@@ -466,19 +481,20 @@ def assert_example_plane() -> None:
         vertex.select_set(False)
     bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=False)
     settings = bpy.context.scene.topology_transitions
+    settings.flow_mode = "REGIONS"
     settings.flow_scope = "ALL"
     settings.flow_sort = "SIDE_TO_SIDE"
     settings.flow_min_edges = 1
     session = build_flow_session(bpy.context)
     memberships = sum(flow.quad_count for flow in session.flows)
-    if not session.flows or memberships != len(bm.faces) * 2:
+    if len(session.flows) <= 8 or memberships != len(bm.faces):
         raise AssertionError(
-            f"Atlas face-flow membership was {memberships}, "
-            f"expected {len(bm.faces) * 2}"
+            f"Atlas region membership was {memberships}, expected {len(bm.faces)}; "
+            f"regions={len(session.flows)}"
         )
     print(
-        f"QT_EXAMPLE_ATLAS_PASS transitions=8 quads=256 labels=8 "
-        f"flows={len(session.flows)} materials=3"
+        f"QT_EXAMPLE_ATLAS_PASS transitions=8 quads={expected_quads} labels=8 "
+        f"regions={len(session.flows)} materials=3 unequal_density=8"
     )
 
 
@@ -493,24 +509,29 @@ def assert_quad_flow_on_transition() -> None:
     if result != {"FINISHED"}:
         raise AssertionError(f"Transition setup returned {result}")
     settings = bpy.context.scene.topology_transitions
+    settings.flow_mode = "REGIONS"
     settings.flow_scope = "ALL"
     settings.flow_sort = "LONGEST"
     settings.flow_min_edges = 1
     session = build_flow_session(bpy.context)
     memberships = sum(flow.quad_count for flow in session.flows)
     bm = bmesh.from_edit_mesh(bpy.context.edit_object.data)
-    if memberships != len(bm.faces) * 2:
+    if memberships != len(bm.faces) or len(session.flows) <= 1:
         raise AssertionError(
-            f"Transition quad faces were not represented twice: {memberships}"
+            f"Transition regions did not cover each quad once: {memberships}; "
+            f"regions={len(session.flows)}"
         )
     labels = {flow.start_label for flow in session.flows} | {
         flow.end_label for flow in session.flows
     }
-    if "Mesh Boundary" not in labels:
+    if "Pole-Separated Region" not in labels:
         raise AssertionError(
-            f"Open face bands did not identify mesh boundaries: {labels}"
+            f"Transition regions did not identify pole separation: {labels}"
         )
-    print(f"QT_QUAD_FLOW_TRANSITION_PASS flows={len(session.flows)}")
+    print(
+        f"QT_QUAD_FLOW_TRANSITION_PASS regions={len(session.flows)} "
+        f"covered_quads={memberships}"
+    )
 
 
 def create_custom_mesh(name, vertices, faces):
@@ -532,12 +553,49 @@ def create_custom_mesh(name, vertices, faces):
     return obj
 
 
+def create_radial_nonquad_ring(name: str, sides: int):
+    vertices = []
+    for radius in (1.0, 2.0):
+        vertices.extend(
+            (
+                radius * math.cos((index / sides) * math.tau),
+                radius * math.sin((index / sides) * math.tau),
+                0.0,
+            )
+            for index in range(sides)
+        )
+    faces = [tuple(range(sides))]
+    faces.extend(
+        (
+            index,
+            (index + 1) % sides,
+            sides + ((index + 1) % sides),
+            sides + index,
+        )
+        for index in range(sides)
+    )
+    obj = create_custom_mesh(name, vertices, faces)
+    bm = bmesh.from_edit_mesh(obj.data)
+    bm.faces.ensure_lookup_table()
+    for face in bm.faces:
+        face.select_set(False)
+    bm.faces[0].select_set(True)
+    bm.select_flush_mode()
+    bmesh.update_edit_mesh(obj.data, loop_triangles=True, destructive=False)
+    return obj
+
+
 def assert_repair_operators() -> None:
     obj = create_custom_mesh(
         "tri_pair",
         ((0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)),
         ((0, 1, 2), (0, 2, 3)),
     )
+    bm = bmesh.from_edit_mesh(obj.data)
+    bm.faces.ensure_lookup_table()
+    bm.faces[1].select_set(False)
+    bm.select_flush_mode()
+    bmesh.update_edit_mesh(obj.data, loop_triangles=True, destructive=False)
     try:
         result = bpy.ops.mesh.quad_transition_solve_selected_tris()
     except RuntimeError:
@@ -555,8 +613,10 @@ def assert_repair_operators() -> None:
     result = bpy.ops.mesh.quad_transition_solve_selected_tris()
     bm = bmesh.from_edit_mesh(obj.data)
     bm.faces.ensure_lookup_table()
-    if result != {"FINISHED"} or len(bm.faces) != 3 or any(
-        len(face.verts) != 4 for face in bm.faces
+    if (
+        result != {"FINISHED"}
+        or len(bm.faces) != 3
+        or any(len(face.verts) != 4 for face in bm.faces)
     ):
         raise AssertionError(
             "Boundary triangle did not become a three-quad center grid"
@@ -574,8 +634,10 @@ def assert_repair_operators() -> None:
     result = bpy.ops.mesh.quad_transition_solve_selected_ngons()
     bm = bmesh.from_edit_mesh(obj.data)
     bm.faces.ensure_lookup_table()
-    if result != {"FINISHED"} or len(bm.faces) != 2 or any(
-        len(face.verts) != 4 for face in bm.faces
+    if (
+        result != {"FINISHED"}
+        or len(bm.faces) != 2
+        or any(len(face.verts) != 4 for face in bm.faces)
     ):
         raise AssertionError("Even n-gon did not become a two-quad fan")
 
@@ -587,31 +649,42 @@ def assert_repair_operators() -> None:
     result = bpy.ops.mesh.quad_transition_solve_selected_ngons()
     bm = bmesh.from_edit_mesh(obj.data)
     bm.faces.ensure_lookup_table()
-    if result != {"FINISHED"} or len(bm.faces) != 2 or any(
-        len(face.verts) != 4 for face in bm.faces
+    if (
+        result != {"FINISHED"}
+        or len(bm.faces) != 2
+        or any(len(face.verts) != 4 for face in bm.faces)
     ):
         raise AssertionError("Triangle plus odd n-gon did not become two quads")
 
-    obj = create_custom_mesh(
-        "unsupported_tri",
-        ((0, 0, 0), (1, 0, 0), (0, 1, 0), (2, 1, 0), (2, 2, 0)),
-        ((0, 1, 2), (1, 3, 4, 2)),
+    obj = create_radial_nonquad_ring("embedded_tri", 3)
+    result = bpy.ops.mesh.quad_transition_solve_selected_tris()
+    bm = bmesh.from_edit_mesh(obj.data)
+    bm.faces.ensure_lookup_table()
+    if (
+        result != {"FINISHED"}
+        or len(bm.faces) != 9
+        or any(len(face.verts) != 4 for face in bm.faces)
+    ):
+        raise AssertionError(
+            f"Embedded triangle propagation failed: {result} / {len(bm.faces)}"
+        )
+
+    obj = create_radial_nonquad_ring("embedded_pentagon", 5)
+    result = bpy.ops.mesh.quad_transition_solve_selected_ngons()
+    bm = bmesh.from_edit_mesh(obj.data)
+    bm.faces.ensure_lookup_table()
+    if (
+        result != {"FINISHED"}
+        or len(bm.faces) != 15
+        or any(len(face.verts) != 4 for face in bm.faces)
+    ):
+        raise AssertionError(
+            f"Embedded pentagon propagation failed: {result} / {len(bm.faces)}"
+        )
+    print(
+        "QT_REPAIR_PASS tri_pair=1 boundary_tri=3 even_ngon=2 mixed_pair=2 "
+        "embedded_tri=9 embedded_pentagon=15"
     )
-    bm = bmesh.from_edit_mesh(obj.data)
-    bm.faces.ensure_lookup_table()
-    bm.faces[1].select_set(False)
-    bm.select_flush_mode()
-    before = (len(bm.verts), len(bm.edges), len(bm.faces))
-    try:
-        result = bpy.ops.mesh.quad_transition_solve_selected_tris()
-    except RuntimeError:
-        result = {"CANCELLED"}
-    bm = bmesh.from_edit_mesh(obj.data)
-    bm.faces.ensure_lookup_table()
-    after = (len(bm.verts), len(bm.edges), len(bm.faces))
-    if result != {"CANCELLED"} or before != after or not bm.faces[0].select:
-        raise AssertionError("Unsupported triangle was changed instead of rejected")
-    print("QT_REPAIR_PASS tri_pair=1 boundary_tri=3 even_ngon=2 mixed_pair=2")
 
 
 def assert_mixed_and_edge_boundary_transition_inputs() -> None:
@@ -635,8 +708,10 @@ def assert_mixed_and_edge_boundary_transition_inputs() -> None:
         conform_surface=True,
     )
     bm = bmesh.from_edit_mesh(obj.data)
-    if result != {"FINISHED"} or len(bm.faces) != 10 or any(
-        len(face.verts) != 4 for face in bm.faces
+    if (
+        result != {"FINISHED"}
+        or len(bm.faces) != 10
+        or any(len(face.verts) != 4 for face in bm.faces)
     ):
         raise AssertionError("Mixed-face rectangular patch was not replaced")
 
@@ -662,11 +737,63 @@ def assert_mixed_and_edge_boundary_transition_inputs() -> None:
         conform_surface=True,
     )
     bm = bmesh.from_edit_mesh(obj.data)
-    if result != {"FINISHED"} or len(bm.faces) != 10 or any(
-        len(face.verts) != 4 for face in bm.faces
+    if (
+        result != {"FINISHED"}
+        or len(bm.faces) != 10
+        or any(len(face.verts) != 4 for face in bm.faces)
     ):
         raise AssertionError("Closed selected edge boundary was not replaced")
     print("QT_TRANSITION_INPUT_PASS mixed_faces=1 closed_edge_boundary=1")
+
+
+def assert_manifold_diagnostics() -> None:
+    obj = create_custom_mesh(
+        "open_plane",
+        ((0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)),
+        ((0, 1, 2, 3),),
+    )
+    result = bpy.ops.mesh.quad_transition_check_manifold()
+    settings = bpy.context.scene.topology_transitions
+    bm = bmesh.from_edit_mesh(obj.data)
+    selected_edges = [edge for edge in bm.edges if edge.select]
+    if (
+        result != {"FINISHED"}
+        or settings.manifold_open_edge_count != 4
+        or settings.manifold_component_count != 1
+        or len(selected_edges) != 4
+    ):
+        raise AssertionError(
+            "Open-plane diagnostic did not select its exact four-edge boundary"
+        )
+    result = bpy.ops.mesh.quad_transition_manifold_step(direction=0)
+    if result != {"FINISHED"} or settings.manifold_current_kind != "Open Boundary":
+        raise AssertionError("Manifold issue stepping did not identify open boundary")
+
+    create_custom_mesh(
+        "over_connected",
+        (
+            (0, 0, 0),
+            (1, 0, 0),
+            (0, 1, 0),
+            (0, -1, 0),
+            (0.5, 0, 1),
+        ),
+        ((0, 1, 2), (1, 0, 3), (0, 1, 4)),
+    )
+    result = bpy.ops.mesh.quad_transition_check_manifold()
+    if result != {"FINISHED"} or settings.manifold_nonmanifold_edge_count != 1:
+        raise AssertionError("Three-face shared edge was not pinpointed")
+
+    clear_scene()
+    bpy.ops.mesh.primitive_cube_add()
+    bpy.ops.object.mode_set(mode="EDIT")
+    result = bpy.ops.mesh.quad_transition_check_manifold()
+    if result != {"FINISHED"} or settings.manifold_issue_count != 0:
+        raise AssertionError("Closed cube did not report as manifold")
+    print(
+        "QT_MANIFOLD_PASS open_plane_edges=4 open_components=1 "
+        "over_connected_edges=1 closed_cube_issues=0"
+    )
 
 
 def main() -> None:
@@ -684,6 +811,7 @@ def main() -> None:
         assert_example_plane()
         assert_repair_operators()
         assert_mixed_and_edge_boundary_transition_inputs()
+        assert_manifold_diagnostics()
         assert_subdivision_preview()
         assert_external_projection_target()
         assert_invalid_selection_is_unchanged()
@@ -691,7 +819,7 @@ def main() -> None:
         print(
             "QT_BLENDER_SMOKE_PASS patterns=13 rejection_cases=2 "
             "preview=1 external_projection=1 quad_flow=3 example_atlas=1 "
-            "repair=5 boundary_input=2"
+            "repair=6 boundary_input=2 manifold=3"
         )
     finally:
         clear_scene()

@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.5.0 - 2026-07-16
+
+- Rebuilt **Quad Flow Regions** around interior extraordinary vertices: pole
+  separatrices divide the complete visible quad mesh into broad, non-overlapping
+  topology zones, with a colored full-map overlay, region selection, scrolling,
+  and automatic camera focus. The former one-quad-wide traversal remains as the
+  explicitly named **Individual Face Bands** mode.
+- Made the tri/n-gon solvers handle ordinary isolated manifold defects. When a
+  local pair is unavailable, they propagate opposite-edge splits through entire
+  surrounding quad paths and rebuild every touched face as quads instead of
+  moving the non-quad problem into a neighbor.
+- Made a single selected triangle automatically pair with a compatible adjacent
+  unselected triangle, and retained separate buttons for triangles and n-gons.
+- Replaced the misleading uniform-grid atlas with eight true density examples:
+  three regular input rows, the pole transition, then three regular output rows
+  with a visibly different column count.
+- Added **Mesh Integrity** controls that find open boundaries, over-connected
+  edges, wire geometry, and isolated vertices; select the exact problem
+  elements; and step/focus connected issue areas.
+- Added pure and Blender tests for region coverage, pole separation, embedded
+  triangle/pentagon propagation, exact open-boundary selection, non-manifold
+  shared edges, and closed-mesh checks.
+
 ## 0.4.0 - 2026-07-15
 
 - Replaced edge-chain browsing with true quad face-flow discovery: each flow is a maximal one-quad-wide band crossing opposite edges of successive quads.

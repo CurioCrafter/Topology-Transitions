@@ -19,6 +19,8 @@ from .quad_flows import (
     MeshQuadTopology,
     QuadFlow,
     discover_quad_flows,
+    discover_quad_regions,
+    neighboring_quad_regions,
     parallel_neighboring_quad_flows,
 )
 
@@ -30,6 +32,7 @@ class QuadFlowError(ValueError):
 @dataclass
 class FlowSession:
     object_name: str
+    mode: str
     topology: MeshQuadTopology
     flows: list[QuadFlow]
     neighbors: dict[int, set[int]]
@@ -114,26 +117,37 @@ def build_flow_session(context: Any) -> FlowSession:
     )
     visible_faces = {face.index for face in bm.faces if not face.hide}
     if settings.flow_scope == "SELECTED":
-        eligible = {
-            face.index for face in bm.faces if face.select and not face.hide
-        }
+        eligible = {face.index for face in bm.faces if face.select and not face.hide}
         if not eligible:
             raise QuadFlowError("Selected scope needs at least one selected face")
     else:
         eligible = visible_faces
-    flows = discover_quad_flows(
-        topology,
-        eligible_faces=eligible,
-        minimum_quads=settings.flow_min_edges,
-        sort=settings.flow_sort,
-    )
+    if settings.flow_mode == "REGIONS":
+        flows = discover_quad_regions(
+            topology,
+            eligible_faces=eligible,
+            minimum_quads=settings.flow_min_edges,
+            sort=settings.flow_sort,
+        )
+        neighbors = neighboring_quad_regions(flows, topology)
+    else:
+        flows = discover_quad_flows(
+            topology,
+            eligible_faces=eligible,
+            minimum_quads=settings.flow_min_edges,
+            sort=settings.flow_sort,
+        )
+        neighbors = parallel_neighboring_quad_flows(flows, topology)
     if not flows:
-        raise QuadFlowError("No quad flows match this scope and minimum quad count")
+        raise QuadFlowError(
+            "No quad flow regions match this scope and minimum quad count"
+        )
     return FlowSession(
         object_name=obj.name,
+        mode=settings.flow_mode,
         topology=topology,
         flows=flows,
-        neighbors=parallel_neighboring_quad_flows(flows, topology),
+        neighbors=neighbors,
         face_vertices=face_vertices,
         face_normals=face_normals,
         world_positions=world_positions,
@@ -223,7 +237,7 @@ def focus_flow(context: Any, session: FlowSession, index: int) -> None:
 class QT_OT_edge_flow_step(Operator):
     bl_idname = "mesh.quad_transition_edge_flow_step"
     bl_label = "Step Quad Flow"
-    bl_description = "Move to another quad face band and optionally select it"
+    bl_description = "Move to another whole quad-flow region and optionally select it"
     bl_options = {"REGISTER", "UNDO"}
 
     direction: IntProperty(name="Direction", min=-1, max=1, default=1)
@@ -253,10 +267,11 @@ class QT_OT_edge_flow_step(Operator):
             select_quad_flow(context, set(session.flows[index].face_ids))
         focus_flow(context, session, index)
         flow = session.flows[index]
+        noun = "region" if session.mode == "REGIONS" else "face band"
         self.report(
             {"INFO"},
-            f"Quad flow {index + 1}/{len(session.flows)}: "
-            f"{flow.quad_count} faces, {flow.alignment:.0%} smooth",
+            f"Quad flow {noun} {index + 1}/{len(session.flows)}: "
+            f"{flow.quad_count} quad faces",
         )
         return {"FINISHED"}
 
@@ -265,7 +280,7 @@ class QT_OT_edge_flow_scroll(Operator):
     bl_idname = "mesh.quad_transition_edge_flow_scroll"
     bl_label = "Start Quad Flow Scroll"
     bl_description = (
-        "Browse one-quad-wide face bands with the mouse wheel and viewport overlay"
+        "Browse complete pole-bounded quad-flow regions with a viewport overlay"
     )
     bl_options = {"REGISTER", "UNDO", "BLOCKING"}
 
@@ -410,7 +425,22 @@ class QT_OT_edge_flow_scroll(Operator):
             gpu.state.depth_test_set("LESS_EQUAL")
             gpu.state.depth_mask_set(False)
             active_faces = set(flow.face_ids)
-            if settings.flow_show_neighbors:
+            if self._session.mode == "REGIONS" and settings.flow_show_full_map:
+                palette = (
+                    (0.08, 0.70, 0.88, 0.20),
+                    (0.93, 0.76, 0.18, 0.20),
+                    (0.44, 0.78, 0.28, 0.20),
+                    (0.60, 0.35, 0.90, 0.20),
+                    (0.95, 0.28, 0.55, 0.20),
+                    (0.98, 0.50, 0.20, 0.20),
+                    (0.20, 0.78, 0.64, 0.20),
+                )
+                for region_index, region in enumerate(self._session.flows):
+                    if region_index != self._index:
+                        self._draw_faces(
+                            set(region.face_ids), palette[region_index % len(palette)]
+                        )
+            elif settings.flow_show_neighbors:
                 neighbor_faces = {
                     face_id
                     for neighbor in self._session.neighbors[self._index]
@@ -444,18 +474,28 @@ class QT_OT_edge_flow_scroll(Operator):
             return
         flow = self._session.flows[self._index]
         settings = bpy.context.scene.topology_transitions
-        lines = [
-            f"QUAD FLOW {self._index + 1} / {len(self._session.flows)}",
-            f"{flow.quad_count} quad faces   {flow.length:.3f} centerline length",
-            f"{flow.alignment:.0%} smooth   "
-            f"{settings.flow_sort.replace('_', ' ').title()} order",
-            "Closed loop"
-            if flow.closed
-            else f"{flow.start_label}  ->  {flow.end_label}",
-            f"{len(self._session.neighbors[self._index])} parallel face bands",
-            "Wheel/Arrows browse + focus | Enter select quad flow | "
-            "S select & stay | F focus | N neighbors | Esc cancel",
-        ]
+        if self._session.mode == "REGIONS":
+            lines = [
+                f"QUAD FLOW REGION {self._index + 1} / {len(self._session.flows)}",
+                f"{flow.quad_count} quad faces   {flow.length:.3f} boundary length",
+                f"{flow.start_label}   {flow.end_label}",
+                f"{len(self._session.neighbors[self._index])} adjacent regions",
+                "Wheel/Arrows browse + focus | Enter select region | "
+                "S select & stay | F focus | N full map | Esc cancel",
+            ]
+        else:
+            lines = [
+                f"QUAD FACE BAND {self._index + 1} / {len(self._session.flows)}",
+                f"{flow.quad_count} quad faces   {flow.length:.3f} centerline length",
+                f"{flow.alignment:.0%} smooth   "
+                f"{settings.flow_sort.replace('_', ' ').title()} order",
+                "Closed loop"
+                if flow.closed
+                else f"{flow.start_label}  ->  {flow.end_label}",
+                f"{len(self._session.neighbors[self._index])} parallel face bands",
+                "Wheel/Arrows browse + focus | Enter select band | "
+                "S select & stay | F focus | N neighbors | Esc cancel",
+            ]
         font_id = 0
         blf.size(font_id, 16.0)
         blf.enable(font_id, blf.SHADOW)
@@ -516,8 +556,8 @@ class QT_OT_edge_flow_scroll(Operator):
         )
         context.window_manager.modal_handler_add(self)
         context.workspace.status_text_set(
-            "Quad Flow Scroll: Wheel/Arrows browse and focus, Enter selects band, "
-            "S selects and stays, F toggles focus, N toggles neighbors, Esc cancels"
+            "Quad Flow Scroll: Wheel/Arrows browse and focus, Enter selects flow, "
+            "S selects and stays, F toggles focus, N toggles map, Esc cancels"
         )
         self._redraw()
         return {"RUNNING_MODAL"}
@@ -554,7 +594,10 @@ class QT_OT_edge_flow_scroll(Operator):
             return {"RUNNING_MODAL"}
         if event.type == "N" and event.value == "PRESS":
             settings = context.scene.topology_transitions
-            settings.flow_show_neighbors = not settings.flow_show_neighbors
+            if self._session.mode == "REGIONS":
+                settings.flow_show_full_map = not settings.flow_show_full_map
+            else:
+                settings.flow_show_neighbors = not settings.flow_show_neighbors
             self._redraw()
             return {"RUNNING_MODAL"}
         if event.type == "WHEELUPMOUSE" or (

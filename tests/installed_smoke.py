@@ -27,6 +27,8 @@ def create_patch():
     obj.select_set(True)
     bpy.ops.object.mode_set(mode="EDIT")
     bm = bmesh.from_edit_mesh(mesh)
+    bm.select_mode = {"FACE"}
+    bpy.context.tool_settings.mesh_select_mode = (False, False, True)
     for face in bm.faces:
         face.select_set(True)
     bm.select_flush_mode()
@@ -57,6 +59,8 @@ def create_triangle_pair():
     obj.select_set(True)
     bpy.ops.object.mode_set(mode="EDIT")
     bm = bmesh.from_edit_mesh(mesh)
+    bm.select_mode = {"FACE"}
+    bpy.context.tool_settings.mesh_select_mode = (False, False, True)
     for face in bm.faces:
         face.select_set(True)
     bm.select_flush_mode()
@@ -76,7 +80,7 @@ def main() -> None:
         )
     if not hasattr(bpy.types.Scene, "topology_transitions"):
         raise AssertionError("Installed add-on did not register scene settings")
-    if topology_transitions.bl_info["version"] != (0, 4, 0):
+    if topology_transitions.bl_info["version"] != (0, 5, 0):
         raise AssertionError(
             f"Installed add-on reported {topology_transitions.bl_info['version']}"
         )
@@ -97,6 +101,7 @@ def main() -> None:
     if len(selected) != 7 or any(len(face.verts) != 4 for face in selected):
         raise AssertionError("Installed copy did not generate the expected seven quads")
     settings = bpy.context.scene.topology_transitions
+    settings.flow_mode = "REGIONS"
     settings.flow_scope = "ALL"
     settings.flow_min_edges = 1
     flow_result = bpy.ops.mesh.quad_transition_edge_flow_step(
@@ -115,7 +120,7 @@ def main() -> None:
     if (
         example_result != {"FINISHED"}
         or example is None
-        or len(example.data.polygons) != 256
+        or len(example.data.polygons) != 186
         or example.get("transition_count") != 8
     ):
         raise AssertionError(
@@ -123,14 +128,25 @@ def main() -> None:
             f"{0 if example is None else len(example.data.polygons)} faces"
         )
     repair_obj = create_triangle_pair()
+    repair_bm = bmesh.from_edit_mesh(repair_obj.data)
+    repair_bm.faces.ensure_lookup_table()
+    for face in repair_bm.faces:
+        face.select_set(False)
+    repair_bm.faces[0].select_set(True)
+    repair_bm.select_flush_mode()
+    bmesh.update_edit_mesh(repair_obj.data, loop_triangles=True, destructive=False)
     repair_result = bpy.ops.mesh.quad_transition_solve_selected_tris()
     repaired = bmesh.from_edit_mesh(repair_obj.data)
     if repair_result != {"FINISHED"} or len(repaired.faces) != 1:
         raise AssertionError(f"Installed triangle repair returned {repair_result}")
+    manifold_result = bpy.ops.mesh.quad_transition_check_manifold()
+    if manifold_result != {"FINISHED"} or settings.manifold_open_edge_count != 4:
+        raise AssertionError("Installed manifold diagnostic missed quad boundary")
     print(
         f"QT_INSTALLED_SMOKE_PASS module={loaded} "
         f"selected_quads={len(selected)} flows={flow_count} "
-        f"flow_quads={strip_quads} example_quads=256 transitions=8 repairs=1"
+        f"flow_quads={strip_quads} example_quads=186 transitions=8 repairs=1 "
+        f"open_edges=4"
     )
 
 

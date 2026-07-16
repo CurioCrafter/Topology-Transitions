@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import unittest
 
+from topology_transitions.core import build_transition_template
 from topology_transitions.quad_flows import (
     MeshQuadTopology,
     discover_quad_flows,
+    discover_quad_regions,
+    neighboring_quad_regions,
     parallel_neighboring_quad_flows,
+    quad_region_barriers,
 )
 
 
@@ -59,7 +63,52 @@ def rectangular_grid(width: int, height: int) -> MeshQuadTopology:
     )
 
 
+def transition_topology() -> MeshQuadTopology:
+    template = build_transition_template(5, 3, 2, 2)
+    vertex_indices = {key: index for index, key in enumerate(template.vertices)}
+    edge_indices: dict[tuple[int, int], int] = {}
+    edge_faces: dict[int, set[int]] = {}
+    face_edges = {}
+    for face_id, face in enumerate(template.faces):
+        edges = []
+        for first, second in zip(face, (*face[1:], face[0]), strict=True):
+            pair = tuple(sorted((vertex_indices[first], vertex_indices[second])))
+            edge_id = edge_indices.setdefault(pair, len(edge_indices))
+            edge_faces.setdefault(edge_id, set()).add(face_id)
+            edges.append(edge_id)
+        face_edges[face_id] = tuple(edges)
+    return MeshQuadTopology(
+        edge_vertices={pair_id: pair for pair, pair_id in edge_indices.items()},
+        edge_faces={edge_id: frozenset(faces) for edge_id, faces in edge_faces.items()},
+        face_edges=face_edges,
+        positions={
+            vertex_indices[key]: (spec.u, spec.v, 0.0)
+            for key, spec in template.vertices.items()
+        },
+    )
+
+
 class QuadFlowTests(unittest.TestCase):
+    def test_regular_grid_is_one_whole_quad_region(self) -> None:
+        topology = rectangular_grid(4, 3)
+        regions = discover_quad_regions(topology)
+        self.assertEqual(len(regions), 1)
+        self.assertEqual(set(regions[0].face_ids), set(topology.face_edges))
+
+    def test_poles_split_transition_into_complete_regions(self) -> None:
+        topology = transition_topology()
+        barriers, separatrices, poles = quad_region_barriers(topology)
+        regions = discover_quad_regions(topology)
+        self.assertEqual(len(poles), 2)
+        self.assertTrue(separatrices)
+        self.assertTrue(separatrices <= barriers)
+        self.assertGreater(len(regions), 1)
+        memberships = [face_id for region in regions for face_id in region.face_ids]
+        self.assertEqual(sorted(memberships), sorted(topology.face_edges))
+        self.assertEqual(len(memberships), len(set(memberships)))
+        neighbors = neighboring_quad_regions(regions, topology)
+        self.assertTrue(any(neighbors.values()))
+
     def test_grid_discovers_face_rows_and_columns(self) -> None:
         topology = rectangular_grid(4, 3)
         flows = discover_quad_flows(topology, sort="INDEX")

@@ -1,9 +1,9 @@
 schema_version = "1.0.0"
 
 id = "topology_transitions"
-version = "0.4.0"
+version = "0.5.0"
 name = "Topology Transitions"
-tagline = "Guided quad transitions, repair, and face-flow inspection"
+tagline = "Guided quad transitions, repair, regions, and manifold checks"
 maintainer = "CurioCrafter"
 type = "add-on"
 

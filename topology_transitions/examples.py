@@ -1,18 +1,18 @@
-"""Ready-made atlas containing every supported topology transition."""
+"""Ready-made atlas containing every supported density transition."""
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
-import bmesh
 import bpy
 from bpy.types import Operator
 
-from .core import preset_counts, transition_items
+from .core import build_transition_template, preset_counts, transition_items
 
-EXAMPLE_ROWS = 8
-PATCH_FIRST_ROW = 3
-PATCH_HEIGHT = 2
+REGULAR_ROWS = 3
+TRANSITION_HEIGHT = 2.0
+EXAMPLE_HEIGHT = REGULAR_ROWS * 2 + TRANSITION_HEIGHT
 ATLAS_COLUMNS = 4
 TILE_SPACING_X = 7.5
 TILE_SPACING_Y = 10.0
@@ -40,82 +40,108 @@ def _remove_objects(objects: list[Any]) -> None:
                 bpy.data.curves.remove(data)
 
 
-def _create_grid_object(context: Any, preset: str, label: str, location: Any):
+def _example_template(preset: str):
+    incoming, outgoing = preset_counts(preset)
+    side_segments = (2, 2) if abs(incoming - outgoing) == 2 else (2, 1)
+    return build_transition_template(
+        incoming,
+        outgoing,
+        *side_segments,
+        pole_side="CENTER",
+        pole_spacing=1.15,
+    )
+
+
+def _create_density_transition_object(
+    context: Any,
+    preset: str,
+    label: str,
+    location: Any,
+    materials: tuple[Any, Any, Any],
+):
+    """Build regular input/output rows around a true unequal-count template."""
+
     for selected in context.selected_objects:
         selected.select_set(False)
     incoming, outgoing = preset_counts(preset)
-    columns = max(incoming, outgoing)
-    half_width = columns * 0.5
-    half_height = EXAMPLE_ROWS * 0.5
-    vertices = [
-        (float(x) - half_width, float(y) - half_height, 0.0)
-        for y in range(EXAMPLE_ROWS + 1)
-        for x in range(columns + 1)
+    width = float(max(incoming, outgoing))
+    template = _example_template(preset)
+    vertices: list[tuple[float, float, float]] = []
+    key_indices: dict[str, int] = {}
+
+    def add_vertex(x: float, y: float) -> int:
+        vertices.append((x, y, 0.0))
+        return len(vertices) - 1
+
+    for key, spec in template.vertices.items():
+        key_indices[key] = add_vertex(
+            (spec.u - 0.5) * width,
+            (spec.v - 0.5) * TRANSITION_HEIGHT,
+        )
+
+    faces: list[tuple[int, int, int, int]] = [
+        tuple(key_indices[key] for key in face) for face in template.faces
     ]
-    faces = []
-    for y in range(EXAMPLE_ROWS):
-        for x in range(columns):
-            first = y * (columns + 1) + x
+    material_indices = [1] * len(faces)
+
+    top_row = [key_indices[key] for key in template.top_keys]
+    for row_index in range(1, REGULAR_ROWS + 1):
+        y = TRANSITION_HEIGHT * 0.5 + row_index
+        next_row = [
+            add_vertex((column / incoming - 0.5) * width, y)
+            for column in range(incoming + 1)
+        ]
+        for column in range(incoming):
             faces.append(
-                (first, first + 1, first + columns + 2, first + columns + 1)
+                (
+                    next_row[column],
+                    next_row[column + 1],
+                    top_row[column + 1],
+                    top_row[column],
+                )
             )
+            material_indices.append(0)
+        top_row = next_row
+
+    bottom_row = [key_indices[key] for key in template.bottom_keys]
+    for row_index in range(1, REGULAR_ROWS + 1):
+        y = -TRANSITION_HEIGHT * 0.5 - row_index
+        next_row = [
+            add_vertex((column / outgoing - 0.5) * width, y)
+            for column in range(outgoing + 1)
+        ]
+        for column in range(outgoing):
+            faces.append(
+                (
+                    bottom_row[column],
+                    bottom_row[column + 1],
+                    next_row[column + 1],
+                    next_row[column],
+                )
+            )
+            material_indices.append(2)
+        bottom_row = next_row
 
     mesh = bpy.data.meshes.new(f"TT_Example_{preset}_Mesh")
     mesh.from_pydata(vertices, [], faces)
     mesh.update()
+    for material in materials:
+        mesh.materials.append(material)
+    for polygon, material_index in zip(mesh.polygons, material_indices, strict=True):
+        polygon.material_index = material_index
+
     obj = bpy.data.objects.new(f"TT_Example_{preset}", mesh)
     context.collection.objects.link(obj)
     obj.location = location
     obj["topology_transition"] = label
+    obj["incoming_columns"] = incoming
+    obj["outgoing_columns"] = outgoing
+    obj["transition_quads"] = len(template.faces)
+    obj["top_regular_quads"] = incoming * REGULAR_ROWS
+    obj["bottom_regular_quads"] = outgoing * REGULAR_ROWS
     context.view_layer.objects.active = obj
     obj.select_set(True)
-
-    bpy.ops.object.mode_set(mode="EDIT")
-    bm = bmesh.from_edit_mesh(mesh)
-    bm.faces.ensure_lookup_table()
-    bm.select_mode = {"FACE"}
-    for face in bm.faces:
-        row = face.index // columns
-        face.select_set(PATCH_FIRST_ROW <= row < PATCH_FIRST_ROW + PATCH_HEIGHT)
-    bm.select_flush_mode()
-    target_y = float(PATCH_FIRST_ROW + PATCH_HEIGHT) - half_height
-    incoming_edges = [
-        edge
-        for edge in bm.edges
-        if edge.select
-        and all(abs(vertex.co.y - target_y) < 1.0e-6 for vertex in edge.verts)
-    ]
-    if not incoming_edges:
-        raise RuntimeError(f"Could not prepare the {label} example patch")
-    bm.select_history.clear()
-    bm.select_history.add(incoming_edges[len(incoming_edges) // 2])
-    bmesh.update_edit_mesh(mesh, loop_triangles=True, destructive=False)
-    result = bpy.ops.mesh.quad_transition_apply(
-        transition=preset,
-        pole_side="CENTER",
-        relax_strength=0.55,
-        relax_iterations=16,
-        conform_surface=True,
-    )
-    if result != {"FINISHED"}:
-        raise RuntimeError(f"Could not build the {label} example transition")
-    bpy.ops.object.mode_set(mode="OBJECT")
     return obj
-
-
-def _assign_bands(obj: Any, materials: tuple[Any, Any, Any]) -> None:
-    for material in materials:
-        obj.data.materials.append(material)
-    for polygon in obj.data.polygons:
-        center_y = sum(
-            obj.data.vertices[index].co.y for index in polygon.vertices
-        ) / len(polygon.vertices)
-        if center_y > 1.0:
-            polygon.material_index = 0
-        elif center_y > -1.0:
-            polygon.material_index = 1
-        else:
-            polygon.material_index = 2
 
 
 def _consolidate_material_slots(obj: Any, materials: tuple[Any, Any, Any]) -> None:
@@ -128,9 +154,7 @@ def _consolidate_material_slots(obj: Any, materials: tuple[Any, Any, Any]) -> No
     obj.data.materials.clear()
     for material in materials:
         obj.data.materials.append(material)
-    for polygon, material_index in zip(
-        obj.data.polygons, polygon_targets, strict=True
-    ):
+    for polygon, material_index in zip(obj.data.polygons, polygon_targets, strict=True):
         polygon.material_index = material_index
 
 
@@ -155,7 +179,7 @@ class QT_OT_add_example_plane(Operator):
     bl_idname = "object.quad_transition_add_example_plane"
     bl_label = "Add All Transition Examples"
     bl_description = (
-        "Create one labeled atlas mesh containing every supported transition"
+        "Create one labeled atlas showing real dense-to-sparse quad transitions"
     )
     bl_options = {"REGISTER", "UNDO"}
 
@@ -176,17 +200,27 @@ class QT_OT_add_example_plane(Operator):
         tiles = []
         labels = []
         items = transition_items()
+        density_metadata = []
         try:
             for index, (preset, label, _description) in enumerate(items):
                 column = index % ATLAS_COLUMNS
                 row = index // ATLAS_COLUMNS
-                offset_x = (column - (ATLAS_COLUMNS - 1) * 0.5) * TILE_SPACING_X
-                offset_y = (0.5 - row) * TILE_SPACING_Y
                 location = base.copy()
-                location.x += offset_x
-                location.y += offset_y
-                obj = _create_grid_object(context, preset, label, location)
-                _assign_bands(obj, materials)
+                location.x += (column - (ATLAS_COLUMNS - 1) * 0.5) * TILE_SPACING_X
+                location.y += (0.5 - row) * TILE_SPACING_Y
+                obj = _create_density_transition_object(
+                    context, preset, label, location, materials
+                )
+                density_metadata.append(
+                    {
+                        "preset": preset,
+                        "incoming": obj["incoming_columns"],
+                        "outgoing": obj["outgoing_columns"],
+                        "top_regular_quads": obj["top_regular_quads"],
+                        "bottom_regular_quads": obj["bottom_regular_quads"],
+                        "transition_quads": obj["transition_quads"],
+                    }
+                )
                 tiles.append(obj)
 
             for tile in tiles:
@@ -199,6 +233,7 @@ class QT_OT_add_example_plane(Operator):
             atlas.data.name = "TopologyTransitions_Example_Atlas_Mesh"
             atlas["topology_transitions_example"] = "all supported transitions"
             atlas["transition_count"] = len(items)
+            atlas["density_transitions"] = json.dumps(density_metadata)
             _consolidate_material_slots(atlas, materials)
 
             for index, (_preset, label, _description) in enumerate(items):
@@ -206,13 +241,13 @@ class QT_OT_add_example_plane(Operator):
                 row = index // ATLAS_COLUMNS
                 location = base.copy()
                 location.x += (column - (ATLAS_COLUMNS - 1) * 0.5) * TILE_SPACING_X
-                location.y += (0.5 - row) * TILE_SPACING_Y + EXAMPLE_ROWS * 0.5 + 0.7
+                location.y += (0.5 - row) * TILE_SPACING_Y + EXAMPLE_HEIGHT * 0.5 + 0.7
                 location.z += 0.025
                 labels.append(
                     _add_label(
                         context,
                         atlas,
-                        label.replace(" to ", " → "),
+                        label.replace(" to ", " \u2192 "),
                         location,
                         label_material,
                     )
@@ -241,7 +276,7 @@ class QT_OT_add_example_plane(Operator):
         settings.flow_object_name = ""
         self.report(
             {"INFO"},
-            f"Added {len(items)} transition examples in one quad-flow atlas",
+            f"Added {len(items)} true density-transition examples",
         )
         return {"FINISHED"}
 

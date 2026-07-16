@@ -1,4 +1,10 @@
-"""Conservative Edit Mode operators for repairing selected non-quad faces."""
+"""Edit Mode operators for repairing selected non-quad faces.
+
+Fast local rewrites are preferred.  When an isolated non-quad cannot be paired,
+the solver propagates its required edge splits through complete opposite-edge
+paths in the surrounding quad mesh.  Rebuilding every touched quad keeps the
+problem from being pushed into a neighbouring face.
+"""
 
 from __future__ import annotations
 
@@ -26,6 +32,20 @@ class RegionPlan:
     material_index: int
     smooth: bool
     quality: float
+
+
+@dataclass(frozen=True)
+class PropagatedFace:
+    face: Any
+    vertices: tuple[Any, ...]
+    edges: tuple[Any, ...]
+    reference_normal: Vector
+    material_index: int
+    smooth: bool
+    target: bool
+
+
+MAX_PROPAGATED_FACES = 10000
 
 
 def _validate_context(context: Any) -> tuple[Any, Any, Any]:
@@ -63,8 +83,7 @@ def _project_coordinates(coordinates: list[Vector], normal: Vector):
     drop_axis = max(range(3), key=lambda axis: abs(normal[axis]))
     kept = [axis for axis in range(3) if axis != drop_axis]
     return tuple(
-        (coordinate[kept[0]], coordinate[kept[1]])
-        for coordinate in coordinates
+        (coordinate[kept[0]], coordinate[kept[1]]) for coordinate in coordinates
     )
 
 
@@ -114,9 +133,11 @@ def _region_cycle(
         previous, current = current, following
     if len(cycle) != len(adjacency):
         raise TransitionError("Selected faces contain a hole or disconnected boundary")
-    return cycle, internal_edges, {
-        edge: len(edge.link_faces) for edge in boundary_edges
-    }
+    return (
+        cycle,
+        internal_edges,
+        {edge: len(edge.link_faces) for edge in boundary_edges},
+    )
 
 
 def _plan_region(faces: tuple[Any, ...]) -> RegionPlan:
@@ -177,11 +198,7 @@ def _replace_region(bm: Any, plan: RegionPlan) -> list[Any]:
         for face in created
     ):
         raise TransitionError("Generated quads failed the area or winding check")
-    if any(
-        len(edge.link_faces) > 2
-        for face in created
-        for edge in face.edges
-    ):
+    if any(len(edge.link_faces) > 2 for face in created for edge in face.edges):
         raise TransitionError("Generated repair contains a non-manifold edge")
     return created
 
@@ -194,7 +211,7 @@ def _safe_plan(faces: tuple[Any, ...]) -> RegionPlan | None:
 
 
 def _pair_plans(
-    faces: list[Any], first_sides: int, second_test
+    faces: list[Any], first_sides: int, second_test, *, selected_only: bool = False
 ) -> list[RegionPlan]:
     selected = set(faces)
     plans = {}
@@ -205,7 +222,11 @@ def _pair_plans(
             if len(edge.link_faces) != 2:
                 continue
             other = next(linked for linked in edge.link_faces if linked != face)
-            if other not in selected or not second_test(other):
+            if (
+                other.hide
+                or (selected_only and other not in selected)
+                or not second_test(other)
+            ):
                 continue
             key = tuple(sorted((face.index, other.index)))
             if key not in plans:
@@ -215,6 +236,202 @@ def _pair_plans(
     return sorted(
         plans.values(),
         key=lambda plan: (-plan.quality, min(face.index for face in plan.faces)),
+    )
+
+
+def _opposite_edge(face: Any, edge: Any) -> Any:
+    edges = tuple(loop.edge for loop in face.loops)
+    try:
+        index = edges.index(edge)
+    except ValueError as exc:
+        raise TransitionError("Quad propagation lost an incident edge") from exc
+    return edges[(index + 2) % 4]
+
+
+def _propagation_faces(
+    seeds: list[Any], *, maximum_faces: int = MAX_PROPAGATED_FACES
+) -> tuple[list[PropagatedFace], set[Any]]:
+    """Trace all edge splits needed to absorb ``seeds`` into an all-quad mesh."""
+
+    targets = set(seeds)
+    marked_edges = {edge for face in seeds for edge in face.edges}
+    queue = list(marked_edges)
+    touched_quads: set[Any] = set()
+    visited_edges: set[Any] = set()
+
+    while queue:
+        edge = queue.pop()
+        if edge in visited_edges:
+            continue
+        visited_edges.add(edge)
+        if not edge.is_valid or len(edge.link_faces) > 2:
+            raise TransitionError(
+                "Propagated repair reached an invalid or non-manifold edge"
+            )
+        for face in tuple(edge.link_faces):
+            if face in targets:
+                continue
+            if face.hide:
+                raise TransitionError(
+                    "Propagated repair reached hidden geometry; reveal it first"
+                )
+            sides = len(face.verts)
+            if sides == 4:
+                touched_quads.add(face)
+                opposite = _opposite_edge(face, edge)
+                if opposite not in marked_edges:
+                    marked_edges.add(opposite)
+                    queue.append(opposite)
+            else:
+                targets.add(face)
+                for boundary_edge in face.edges:
+                    if boundary_edge not in marked_edges:
+                        marked_edges.add(boundary_edge)
+                        queue.append(boundary_edge)
+            if len(targets) + len(touched_quads) > maximum_faces:
+                raise TransitionError(
+                    f"Repair would affect more than {maximum_faces:,} faces; "
+                    "select a smaller topology region"
+                )
+
+    affected = targets | touched_quads
+    records = []
+    for face in affected:
+        if not face.is_valid:
+            raise TransitionError("A propagated repair face became invalid")
+        loops = tuple(face.loops)
+        normal = face.normal.copy()
+        if normal.length_squared <= 1.0e-16:
+            raise TransitionError("A propagated repair face has no stable normal")
+        normal.normalize()
+        records.append(
+            PropagatedFace(
+                face=face,
+                vertices=tuple(loop.vert for loop in loops),
+                edges=tuple(loop.edge for loop in loops),
+                reference_normal=normal,
+                material_index=face.material_index,
+                smooth=face.smooth,
+                target=face in targets,
+            )
+        )
+
+    for record in records:
+        marked_count = sum(edge in marked_edges for edge in record.edges)
+        if record.target and marked_count != len(record.edges):
+            raise TransitionError("A target non-quad was not split on every side")
+        if not record.target:
+            if marked_count not in {2, 4}:
+                raise TransitionError(
+                    "Quad propagation produced an adjacent rather than opposite split"
+                )
+            if marked_count == 2:
+                indices = [
+                    index
+                    for index, edge in enumerate(record.edges)
+                    if edge in marked_edges
+                ]
+                if (indices[1] - indices[0]) % 4 != 2:
+                    raise TransitionError(
+                        "Quad propagation produced two non-opposite splits"
+                    )
+    return records, marked_edges
+
+
+def _oriented_face_vertices(vertices: list[Any], reference_normal: Vector) -> list[Any]:
+    normal = (vertices[1].co - vertices[0].co).cross(
+        vertices[2].co - vertices[0].co
+    ) + (vertices[2].co - vertices[0].co).cross(vertices[3].co - vertices[0].co)
+    return list(reversed(vertices)) if normal.dot(reference_normal) < 0.0 else vertices
+
+
+def _cycle_between(values: list[Any], start: int, end: int) -> list[Any]:
+    result = [values[start]]
+    index = start
+    while index != end:
+        index = (index + 1) % len(values)
+        result.append(values[index])
+    return result
+
+
+def _propagated_grid(bm: Any, seeds: list[Any]) -> tuple[list[Any], int, int]:
+    """Repair arbitrary visible non-quads by carrying splits through quad rings."""
+
+    records, marked_edges = _propagation_faces(seeds)
+    midpoint_by_edge = {}
+    for edge in sorted(marked_edges, key=lambda item: item.index):
+        if not edge.is_valid:
+            raise TransitionError("A propagated split edge became invalid")
+        _new_edge, midpoint = bmesh.utils.edge_split(edge, edge.verts[0], 0.5)
+        midpoint_by_edge[edge] = midpoint
+
+    bmesh.ops.delete(
+        bm,
+        geom=[record.face for record in records],
+        context="FACES_ONLY",
+    )
+    created = []
+    for record in records:
+        marked_indices = [
+            index for index, edge in enumerate(record.edges) if edge in midpoint_by_edge
+        ]
+        face_vertex_sets: list[list[Any]]
+        if record.target or len(marked_indices) == 4:
+            center_coordinate = sum(
+                (vertex.co for vertex in record.vertices),
+                Vector((0.0, 0.0, 0.0)),
+            ) / len(record.vertices)
+            center = bm.verts.new(center_coordinate)
+            face_vertex_sets = [
+                [
+                    vertex,
+                    midpoint_by_edge[record.edges[index]],
+                    center,
+                    midpoint_by_edge[record.edges[index - 1]],
+                ]
+                for index, vertex in enumerate(record.vertices)
+            ]
+        else:
+            expanded: list[Any] = []
+            midpoint_positions = []
+            for index, vertex in enumerate(record.vertices):
+                expanded.append(vertex)
+                edge = record.edges[index]
+                if edge in midpoint_by_edge:
+                    expanded.append(midpoint_by_edge[edge])
+                    midpoint_positions.append(len(expanded) - 1)
+            first, second = midpoint_positions
+            face_vertex_sets = [
+                _cycle_between(expanded, first, second),
+                _cycle_between(expanded, second, first),
+            ]
+
+        for vertices in face_vertex_sets:
+            if len(vertices) != 4:
+                raise TransitionError(
+                    "Propagated repair did not reconstruct a four-sided face"
+                )
+            quad = bm.faces.new(
+                _oriented_face_vertices(vertices, record.reference_normal)
+            )
+            quad.material_index = record.material_index
+            quad.smooth = record.smooth
+            created.append(quad)
+
+    bm.normal_update()
+    if any(
+        not face.is_valid or len(face.verts) != 4 or face.calc_area() <= 1.0e-12
+        for face in created
+    ):
+        raise TransitionError(
+            "Propagated repair generated a zero-area or non-quad face"
+        )
+    if any(len(edge.link_faces) > 2 for face in created for edge in face.edges):
+        raise TransitionError("Propagated repair generated a non-manifold edge")
+    return (
+        created,
+        sum(not record.target for record in records),
+        len(marked_edges),
     )
 
 
@@ -246,8 +463,7 @@ def _boundary_grid(bm: Any, face: Any) -> list[Any]:
         (vertex.co for vertex in original_vertices), Vector((0.0, 0.0, 0.0))
     ) / len(original_vertices)
     midpoint_coordinates = [
-        (vertex.co + original_vertices[(index + 1) % len(original_vertices)].co)
-        * 0.5
+        (vertex.co + original_vertices[(index + 1) % len(original_vertices)].co) * 0.5
         for index, vertex in enumerate(original_vertices)
     ]
     projected = _project_coordinates(
@@ -282,9 +498,7 @@ def _boundary_grid(bm: Any, face: Any) -> list[Any]:
         vertices = [vertex, midpoints[index], center, midpoints[index - 1]]
         normal = (vertices[1].co - vertices[0].co).cross(
             vertices[2].co - vertices[0].co
-        ) + (vertices[2].co - vertices[0].co).cross(
-            vertices[3].co - vertices[0].co
-        )
+        ) + (vertices[2].co - vertices[0].co).cross(vertices[3].co - vertices[0].co)
         if normal.dot(reference_normal) < 0.0:
             vertices.reverse()
         quad = bm.faces.new(vertices)
@@ -324,7 +538,10 @@ def solve_selected(context: Any, target: str) -> dict[str, Any]:
         "even_ngons": 0,
         "mixed_pairs": 0,
         "boundary_grids": 0,
+        "propagated_grids": 0,
     }
+    propagated_quad_faces = 0
+    propagated_edges = 0
     try:
         if target == "TRIS":
             pair_plans = _pair_plans(selected, 3, lambda face: len(face.verts) == 3)
@@ -354,8 +571,10 @@ def solve_selected(context: Any, target: str) -> dict[str, Any]:
         methods["mixed_pairs"] += count
 
         for face in target_faces:
-            if face in used or not face.is_valid or not all(
-                len(edge.link_faces) == 1 for edge in face.edges
+            if (
+                face in used
+                or not face.is_valid
+                or not all(len(edge.link_faces) == 1 for edge in face.edges)
             ):
                 continue
             created.extend(_boundary_grid(bm, face))
@@ -365,6 +584,16 @@ def solve_selected(context: Any, target: str) -> dict[str, Any]:
         remaining = [
             face for face in target_faces if face.is_valid and face not in used
         ]
+        if remaining:
+            new_faces, affected_quads, split_edges = _propagated_grid(bm, remaining)
+            created.extend(new_faces)
+            used.update(remaining)
+            methods["propagated_grids"] += len(remaining)
+            propagated_quad_faces += affected_quads
+            propagated_edges += split_edges
+            remaining = [
+                face for face in target_faces if face.is_valid and face not in used
+            ]
         solved_target = len(target_faces) - len(remaining)
         if solved_target == 0:
             noun = "triangles" if target == "TRIS" else "n-gons"
@@ -399,6 +628,8 @@ def solve_selected(context: Any, target: str) -> dict[str, Any]:
         "remaining": len(remaining),
         "created_quads": len(created),
         "methods": methods,
+        "propagated_quad_faces": propagated_quad_faces,
+        "propagated_edges": propagated_edges,
         "had_uvs": bool(mesh.uv_layers),
     }
 
@@ -454,7 +685,13 @@ def _execute_repair(operator: Operator, context: Any, target: str):
     operator.report(
         level,
         f"Solved {stats['solved']}/{stats['selected']} selected {noun} into "
-        f"{stats['created_quads']} quads; {stats['remaining']} left selected",
+        f"{stats['created_quads']} quads; {stats['remaining']} left selected"
+        + (
+            f" (carried {stats['propagated_edges']} splits through "
+            f"{stats['propagated_quad_faces']} surrounding quads)"
+            if stats["propagated_edges"]
+            else ""
+        ),
     )
     if stats["had_uvs"]:
         operator.report(

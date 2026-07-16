@@ -112,6 +112,23 @@ class QT_PG_settings(PropertyGroup):
         max=4,
         default=2,
     )
+    flow_mode: EnumProperty(
+        name="Flow View",
+        description="Choose broad retopology regions or individual face bands",
+        items=(
+            (
+                "REGIONS",
+                "Quad Flow Regions",
+                "Map whole quad patches separated by poles and separatrix flows",
+            ),
+            (
+                "FACE_STRIPS",
+                "Individual Face Bands",
+                "Inspect granular one-quad-wide loops and strips",
+            ),
+        ),
+        default="REGIONS",
+    )
     flow_scope: EnumProperty(
         name="Scope",
         description="Faces considered by the quad-flow browser",
@@ -126,6 +143,11 @@ class QT_PG_settings(PropertyGroup):
         description="Order used when scrolling through flows",
         items=(
             (
+                "LARGEST",
+                "Largest First",
+                "Show the broadest quad regions or longest face bands first",
+            ),
+            (
                 "SIDE_TO_SIDE",
                 "Side to Side",
                 "Finish adjacent parallel face bands before changing direction",
@@ -138,7 +160,7 @@ class QT_PG_settings(PropertyGroup):
             ),
             ("INDEX", "Mesh Order", "Use deterministic mesh face order"),
         ),
-        default="SIDE_TO_SIDE",
+        default="LARGEST",
     )
     flow_min_edges: IntProperty(
         name="Minimum Quads",
@@ -150,6 +172,11 @@ class QT_PG_settings(PropertyGroup):
     flow_show_neighbors: BoolProperty(
         name="Show Neighbors",
         description="Fill directly adjacent parallel quad bands in cyan",
+        default=True,
+    )
+    flow_show_full_map: BoolProperty(
+        name="Show Full Map",
+        description="Colour every discovered quad-flow region while browsing",
         default=True,
     )
     flow_focus_view: BoolProperty(
@@ -168,6 +195,21 @@ class QT_PG_settings(PropertyGroup):
     flow_closed: BoolProperty(name="Closed Flow", default=False)
     flow_start_label: StringProperty(name="Start", default="Not inspected")
     flow_end_label: StringProperty(name="End", default="Not inspected")
+    manifold_object_name: StringProperty(name="Checked Object", default="")
+    manifold_issue_count: IntProperty(name="Issue Elements", min=0, default=0)
+    manifold_component_count: IntProperty(name="Issue Areas", min=0, default=0)
+    manifold_component_index: IntProperty(name="Current Issue", min=0, default=0)
+    manifold_open_edge_count: IntProperty(name="Open Edges", min=0, default=0)
+    manifold_nonmanifold_edge_count: IntProperty(
+        name="Non-Manifold Edges", min=0, default=0
+    )
+    manifold_wire_edge_count: IntProperty(name="Wire Edges", min=0, default=0)
+    manifold_isolated_vertex_count: IntProperty(
+        name="Isolated Vertices", min=0, default=0
+    )
+    manifold_current_kind: StringProperty(
+        name="Current Issue Type", default="Not checked"
+    )
 
 
 CLASSES = (QT_PG_settings,)

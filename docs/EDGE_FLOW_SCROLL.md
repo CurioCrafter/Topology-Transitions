@@ -1,68 +1,82 @@
 # Quad Flow Scroll
 
-Quad Flow Scroll is an Edit Mode inspector for the one-quad-wide face loops and open face strips that pass through a retopologized mesh. Faces are the primary flow elements. Edges only define how the band enters and leaves each quad.
+Quad Flow Scroll has two deliberately different topology views. **Quad Flow
+Regions** is the default whole-mesh reading tool. **Individual Face Bands** is a
+granular loop/strip browser.
 
-![A filled quad face band and its parallel neighbors on a torus](images/03-edge-flow-scroll.png)
+## Quad Flow Regions (default)
 
-## What counts as a quad flow
+A retopology flow region is a connected patch of quads bounded by the topology
+lines that emerge from poles. Discovery is entirely combinatorial:
 
-Every quad has two perpendicular flow directions. For either direction, the browser enters through one edge, crosses the face, leaves through the opposite edge, and repeats in the neighboring quad. The maximal connected sequence is one flow.
+1. open mesh boundaries and non-quad/non-manifold boundaries become barriers;
+2. interior vertices whose valence is not four are extraordinary vertices;
+3. from each extraordinary vertex, separatrices continue through the opposite
+   edge at regular valence-four vertices; and
+4. all eligible quads are flood-filled across non-barrier edges.
 
-On a 4 × 3 quad grid this produces seven flows: three rows of four faces and four columns of three faces. Each face therefore belongs to exactly two perpendicular flows. The previous edge-chain implementation produced five chains and filled faces on both sides of each chain; that is no longer the model used by the add-on.
+Every visible eligible quad belongs to exactly one region. A completely regular
+grid is one region. A five-to-three template with its two N-poles is divided
+into several pole-bounded regions.
 
-A flow stops at:
+![Whole colored region map around a transition](images/04-flow-termination.png)
 
-- a mesh boundary;
-- the edge of the selected-face scope;
-- a triangle or n-gon;
-- a non-manifold edge.
+The complete map uses distinct translucent colors. The current region is
+orange/red with a strong boundary; separatrix edges are magenta. The HUD reports
+region size, boundary length, boundary-edge count, and adjacent-region count.
 
-Pole valence does not choose or terminate a face flow. Continuation is determined by the opposite edge of each quad, which keeps the result topological and pose-independent.
+Mouse wheel and arrow keys browse from one complete region to the next. With
+**Focus View** enabled, every step moves the 3D View to the active region instead
+of jumping between unrelated edge snippets.
 
-## Reading the overlay
+## Individual Face Bands
 
-| Color | Meaning |
-| --- | --- |
-| Translucent orange faces | The active quad flow itself. |
-| Thin orange grid | Every edge belonging to the active face band. |
-| Strong orange outline | The outside boundary of the active face band. |
-| Translucent cyan faces | Directly adjacent parallel face bands. |
-| Magenta edge | An open terminal edge. |
+Each quad also has two perpendicular one-face-wide directions. A band enters a
+quad through one edge, leaves through the opposite edge, and repeats through the
+next quad. Each quad therefore belongs to two perpendicular bands.
 
-The HUD and sidebar show the current/total flow number, quad count, world-space centerline length, centerline smoothness, open or closed state, terminal classifications, and parallel-band count.
+![A granular one-quad-wide band on a torus](images/03-edge-flow-scroll.png)
 
-With **Side to Side** ordering, side-adjacent bands form a parallel-family graph. The browser finishes one family from one side to the other before moving to a perpendicular direction or disconnected component.
+This mode is useful for checking literal loop continuation and side-to-side band
+families. It is not described as the complete flow-zone map. It stops at mesh,
+scope, non-quad, or non-manifold boundaries.
 
-![A one-quad-wide face flow crossing a five-to-three transition](images/04-flow-termination.png)
+## Scope, ordering, and filtering
 
-## Scope and filtering
-
-- **All Visible** considers every non-hidden quad face in the active mesh.
-- **Selected Faces** restricts discovery to the current selected-face region.
-- **Minimum Quads** removes short bands from the browser.
-- **Order** traverses side-to-side by default, or sorts by quad count, centerline smoothness, or stable face index.
+- **All Visible** considers every non-hidden quad face.
+- **Selected Faces** clips discovery to the selected face set.
+- **Minimum Quads** removes smaller regions or bands.
+- **Largest First** is the default region order.
+- **Side to Side** completes adjacent parallel families in face-band mode.
+- Smoothness and stable mesh-index ordering remain available.
 
 ## Controls
 
-| Input | Action |
-| --- | --- |
-| Wheel / Left / Right / Up / Down | Browse and frame the next/previous quad face band. |
-| Home / End | Jump to first / last flow. |
-| Enter | Select the full current face band and finish. |
-| S | Select the full face band and continue browsing. |
-| F | Toggle automatic viewport centering and framing. |
-| N | Toggle adjacent parallel-band overlay. |
-| Middle mouse | Pass viewport navigation through to Blender. |
-| Esc / right-click | Cancel and restore the pre-inspector selection. |
+| Input | Quad Flow Regions | Individual Face Bands |
+| --- | --- | --- |
+| Wheel / arrows | Browse and focus regions | Browse and focus bands |
+| Home / End | First / last region | First / last band |
+| Enter | Select region and finish | Select band and finish |
+| S | Select region and continue | Select band and continue |
+| F | Toggle automatic focus | Toggle automatic focus |
+| N | Toggle the full colored map | Toggle parallel neighbors |
+| Middle mouse | Pass navigation to Blender | Pass navigation to Blender |
+| Esc / right-click | Restore original selection | Restore original selection |
 
-The non-modal **Previous**, **Refresh**, and **Next** buttons use the same face-flow engine.
+The non-modal **Previous**, **Refresh**, and **Next** buttons use the same active
+mode and also focus/select the complete region or band.
 
-## Example atlas
+## True density atlas
 
-Use **Add All Transition Examples** in Object Mode to create one joined atlas mesh at the 3D Cursor. Its eight labeled tiles cover every supported direction: 5 → 3, 3 → 5, 3 → 1, 1 → 3, 4 → 2, 2 → 4, 1 → 2, and 2 → 1. The atlas contains 256 quads and is ready for the flow inspector after entering Edit Mode.
+**Add All Transition Examples** makes one joined, 186-quad atlas. Each of its
+eight tiles has three regular input rows, a pole-based transition, and three
+regular output rows with a different column count.
 
-![The generated example atlas](images/05-example-plane-strip.png)
+![True unequal-density example atlas](images/05-example-plane-strip.png)
 
 ## Topology changes while browsing
 
-The inspector leaves mesh data and selection untouched until a face band is confirmed; view framing is the only default interaction. If vertex, edge, or face counts change while it is active, the session cancels instead of drawing stale indices against a changed BMesh.
+The inspector does not alter mesh topology. Selection changes only when the user
+confirms/selects a region or band; cancel restores the starting selection. If
+vertex, edge, or face counts change during a modal session, it closes instead of
+drawing stale BMesh indices.

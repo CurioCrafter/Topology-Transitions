@@ -20,9 +20,9 @@ def polygon_signed_area(points: Sequence[Point2D]) -> float:
 
 
 def _cross(first: Point2D, second: Point2D, third: Point2D) -> float:
-    return (second[0] - first[0]) * (third[1] - second[1]) - (
-        second[1] - first[1]
-    ) * (third[0] - second[0])
+    return (second[0] - first[0]) * (third[1] - second[1]) - (second[1] - first[1]) * (
+        third[0] - second[0]
+    )
 
 
 def _point_on_segment(point: Point2D, first: Point2D, second: Point2D) -> bool:
@@ -57,10 +57,7 @@ def _segments_intersect(
     ):
         return True
     return any(
-        (
-            abs(cross) <= EPSILON
-            and _point_on_segment(point, segment_a, segment_b)
-        )
+        (abs(cross) <= EPSILON and _point_on_segment(point, segment_a, segment_b))
         for cross, point, segment_a, segment_b in (
             (first_side_a, second_a, first_a, first_b),
             (first_side_b, second_b, first_a, first_b),
@@ -82,12 +79,9 @@ def _point_inside_polygon(point: Point2D, polygon: Sequence[Point2D]) -> bool:
     for current in polygon:
         crosses_y = (current[1] > point[1]) != (previous[1] > point[1])
         if crosses_y:
-            intersection_x = (
-                (previous[0] - current[0])
-                * (point[1] - current[1])
-                / (previous[1] - current[1])
-                + current[0]
-            )
+            intersection_x = (previous[0] - current[0]) * (point[1] - current[1]) / (
+                previous[1] - current[1]
+            ) + current[0]
             if point[0] < intersection_x:
                 inside = not inside
         previous = current
@@ -166,8 +160,7 @@ def quad_fan_quality(points: Sequence[Point2D], quads: Sequence[Quad]) -> float:
             first = (previous[0] - current[0], previous[1] - current[1])
             second = (following[0] - current[0], following[1] - current[1])
             denominator = (
-                (first[0] ** 2 + first[1] ** 2)
-                * (second[0] ** 2 + second[1] ** 2)
+                (first[0] ** 2 + first[1] ** 2) * (second[0] ** 2 + second[1] ** 2)
             ) ** 0.5
             if denominator <= EPSILON:
                 return 0.0
@@ -194,9 +187,7 @@ def best_quad_fan(points: Sequence[Point2D]) -> tuple[Quad, ...] | None:
     best_score = -1.0
     for candidate in quad_fan_candidates(len(points)):
         if any(
-            not _quad_is_strictly_convex(
-                [points[index] for index in quad], orientation
-            )
+            not _quad_is_strictly_convex([points[index] for index in quad], orientation)
             for quad in candidate
         ):
             continue

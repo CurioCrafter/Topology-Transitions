@@ -1,9 +1,14 @@
-"""Discover one-quad-wide face bands through quad topology.
+"""Discover broad quad-flow regions and optional one-quad-wide face bands.
 
 A quad flow is a maximal sequence of faces reached by entering a quad through
 one edge and leaving through the opposite edge.  Each quad participates in two
 perpendicular flow directions.  Edges define the route, but faces are the
 primary discovered, highlighted, and selected elements.
+
+The default region view traces separatrices from interior extraordinary
+vertices (the poles that redirect retopology) and flood-fills the quad patches
+between them. This produces broad coloured flow zones rather than mistaking
+every edge loop for a complete topology region.
 """
 
 from __future__ import annotations
@@ -226,8 +231,7 @@ def _average(points: Iterable[Vector3]) -> Vector3:
 
 def _face_center(topology: MeshQuadTopology, face_id: int) -> Vector3:
     return _average(
-        topology.positions[vertex_id]
-        for vertex_id in _face_vertices(topology, face_id)
+        topology.positions[vertex_id] for vertex_id in _face_vertices(topology, face_id)
     )
 
 
@@ -335,9 +339,7 @@ def parallel_neighboring_quad_flows(
     """Return face bands directly beside each flow across their side edges."""
 
     node_to_flow = {
-        node: flow_index
-        for flow_index, flow in enumerate(flows)
-        for node in flow.nodes
+        node: flow_index for flow_index, flow in enumerate(flows) for node in flow.nodes
     }
     neighbors = {index: set() for index in range(len(flows))}
     eligible = {face_id for flow in flows for face_id in flow.face_ids}
@@ -402,9 +404,7 @@ def _order_side_to_side(
     ordered_indices = []
     for family in families:
         unvisited = set(family)
-        endpoints = [
-            index for index in family if len(neighbors[index] & family) <= 1
-        ]
+        endpoints = [index for index in family if len(neighbors[index] & family) <= 1]
         current = min(endpoints or family, key=flow_key)
         while unvisited:
             ordered_indices.append(current)
@@ -457,7 +457,7 @@ def discover_quad_flows(
 
     if sort == "SIDE_TO_SIDE":
         flows = _order_side_to_side(flows, topology)
-    elif sort == "LONGEST":
+    elif sort in {"LARGEST", "LONGEST"}:
         flows.sort(key=lambda flow: (-flow.quad_count, -flow.length, min(flow.nodes)))
     elif sort == "SMOOTHEST":
         flows.sort(
@@ -472,3 +472,222 @@ def discover_quad_flows(
     else:
         raise ValueError(f"Unknown quad-flow sort: {sort}")
     return flows
+
+
+def _incident_edges(topology: MeshQuadTopology) -> dict[int, set[int]]:
+    result = {vertex_id: set() for vertex_id in topology.positions}
+    for edge_id, vertices in topology.edge_vertices.items():
+        for vertex_id in vertices:
+            result.setdefault(vertex_id, set()).add(edge_id)
+    return result
+
+
+def _other_vertex(topology: MeshQuadTopology, edge_id: int, vertex_id: int) -> int:
+    first, second = topology.edge_vertices[edge_id]
+    if first == vertex_id:
+        return second
+    if second == vertex_id:
+        return first
+    raise ValueError(f"Vertex {vertex_id} is not on edge {edge_id}")
+
+
+def quad_region_barriers(
+    topology: MeshQuadTopology,
+    *,
+    eligible_faces: Iterable[int] | None = None,
+) -> tuple[set[int], set[int], set[int]]:
+    """Return barrier edges, separatrices, and interior extraordinary vertices."""
+
+    eligible = (
+        {face_id for face_id, edges in topology.face_edges.items() if len(edges) == 4}
+        if eligible_faces is None
+        else {
+            face_id
+            for face_id in eligible_faces
+            if len(topology.face_edges.get(face_id, ())) == 4
+        }
+    )
+    incident = _incident_edges(topology)
+    boundary_vertices = {
+        vertex_id
+        for vertex_id, edge_ids in incident.items()
+        if any(len(topology.edge_faces[edge_id]) != 2 for edge_id in edge_ids)
+    }
+    nonquad_faces = {
+        face_id for face_id, edges in topology.face_edges.items() if len(edges) != 4
+    }
+    nonquad_vertices = {
+        vertex_id
+        for edge_id, linked in topology.edge_faces.items()
+        if linked & nonquad_faces
+        for vertex_id in topology.edge_vertices[edge_id]
+    }
+    extraordinary = {
+        vertex_id
+        for vertex_id, edge_ids in incident.items()
+        if vertex_id not in boundary_vertices
+        and vertex_id not in nonquad_vertices
+        and len(edge_ids) != 4
+    }
+
+    barriers = {
+        edge_id
+        for edge_id, linked in topology.edge_faces.items()
+        if len(linked) != 2
+        or bool(linked & nonquad_faces)
+        or len(linked & eligible) != len(linked)
+    }
+    separatrices: set[int] = set()
+    for pole in sorted(extraordinary):
+        for initial_edge in sorted(incident[pole]):
+            current_vertex = _other_vertex(topology, initial_edge, pole)
+            incoming_edge = initial_edge
+            seen = set()
+            while True:
+                state = (current_vertex, incoming_edge)
+                if state in seen:
+                    break
+                seen.add(state)
+                separatrices.add(incoming_edge)
+                if (
+                    current_vertex in boundary_vertices
+                    or current_vertex in extraordinary
+                    or current_vertex in nonquad_vertices
+                ):
+                    break
+                candidates = [
+                    edge_id
+                    for edge_id in incident[current_vertex]
+                    if edge_id != incoming_edge
+                    and not (
+                        topology.edge_faces[edge_id]
+                        & topology.edge_faces[incoming_edge]
+                    )
+                ]
+                if len(candidates) != 1:
+                    break
+                outgoing_edge = candidates[0]
+                current_vertex = _other_vertex(topology, outgoing_edge, current_vertex)
+                incoming_edge = outgoing_edge
+    barriers.update(separatrices)
+    return barriers, separatrices, extraordinary
+
+
+def discover_quad_regions(
+    topology: MeshQuadTopology,
+    *,
+    eligible_faces: Iterable[int] | None = None,
+    minimum_quads: int = 1,
+    sort: str = "LARGEST",
+) -> list[QuadFlow]:
+    """Discover complete quad patches bounded by poles and their separatrices."""
+
+    if minimum_quads < 1:
+        raise ValueError("minimum_quads must be at least one")
+    eligible = (
+        {face_id for face_id, edges in topology.face_edges.items() if len(edges) == 4}
+        if eligible_faces is None
+        else {
+            face_id
+            for face_id in eligible_faces
+            if len(topology.face_edges.get(face_id, ())) == 4
+        }
+    )
+    unknown = eligible - set(topology.face_edges)
+    if unknown:
+        raise ValueError(f"Unknown eligible faces: {sorted(unknown)}")
+    barriers, separatrices, _extraordinary = quad_region_barriers(
+        topology, eligible_faces=eligible
+    )
+    remaining = set(eligible)
+    region_faces = []
+    while remaining:
+        pending = [min(remaining)]
+        region = set()
+        while pending:
+            face_id = pending.pop()
+            if face_id in region:
+                continue
+            region.add(face_id)
+            for edge_id in topology.face_edges[face_id]:
+                if edge_id in barriers:
+                    continue
+                pending.extend(
+                    other
+                    for other in topology.edge_faces[edge_id]
+                    if other in eligible and other not in region
+                )
+        remaining -= region
+        if len(region) >= minimum_quads:
+            region_faces.append(region)
+
+    regions = []
+    for faces in region_faces:
+        boundary = {
+            edge_id
+            for face_id in faces
+            for edge_id in topology.face_edges[face_id]
+            if edge_id in barriers
+            or any(
+                linked_face not in faces for linked_face in topology.edge_faces[edge_id]
+            )
+            or len(topology.edge_faces[edge_id]) < 2
+        }
+        boundary_length = sum(
+            _length(
+                _subtract(
+                    topology.positions[topology.edge_vertices[edge_id][1]],
+                    topology.positions[topology.edge_vertices[edge_id][0]],
+                )
+            )
+            for edge_id in boundary
+        )
+        pole_boundary = bool(boundary & separatrices)
+        ordered = tuple(sorted(faces))
+        regions.append(
+            QuadFlow(
+                face_ids=ordered,
+                face_axes=(0,) * len(ordered),
+                crossed_edge_ids=tuple(sorted(boundary)),
+                endpoint_edge_ids=tuple(sorted(boundary & separatrices)),
+                closed=False,
+                length=boundary_length,
+                alignment=1.0,
+                start_label=(
+                    "Pole-Separated Region" if pole_boundary else "Regular Quad Region"
+                ),
+                end_label=f"{len(boundary)} boundary edges",
+            )
+        )
+
+    if sort in {"LARGEST", "LONGEST"}:
+        regions.sort(key=lambda region: (-region.quad_count, min(region.face_ids)))
+    elif sort in {"INDEX", "SIDE_TO_SIDE"}:
+        regions.sort(key=lambda region: min(region.face_ids))
+    elif sort == "SMOOTHEST":
+        regions.sort(key=lambda region: (-region.quad_count, min(region.face_ids)))
+    else:
+        raise ValueError(f"Unknown quad-region sort: {sort}")
+    return regions
+
+
+def neighboring_quad_regions(
+    regions: Sequence[QuadFlow], topology: MeshQuadTopology
+) -> dict[int, set[int]]:
+    """Return regions that meet across at least one boundary edge."""
+
+    face_to_region = {
+        face_id: index
+        for index, region in enumerate(regions)
+        for face_id in region.face_ids
+    }
+    neighbors = {index: set() for index in range(len(regions))}
+    for linked in topology.edge_faces.values():
+        indices = {
+            face_to_region[face_id] for face_id in linked if face_id in face_to_region
+        }
+        if len(indices) == 2:
+            first, second = indices
+            neighbors[first].add(second)
+            neighbors[second].add(first)
+    return neighbors

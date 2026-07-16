@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import bpy
 from bpy.types import Panel
 
 
@@ -19,11 +18,7 @@ def _copy_operator_settings(
     ):
         setattr(operator, name, getattr(settings, name))
     if include_geometry:
-        for name in (
-            "relax_strength",
-            "relax_iterations",
-            "conform_surface",
-        ):
+        for name in ("relax_strength", "relax_iterations", "conform_surface"):
             setattr(operator, name, getattr(settings, name))
         operator.projection_target_name = (
             settings.projection_target.name if settings.projection_target else ""
@@ -38,7 +33,7 @@ class QT_PT_sidebar(Panel):
     bl_category = "Quad Transition"
 
     @classmethod
-    def poll(cls, context):
+    def poll(cls, _context):
         return True
 
     def draw(self, context):
@@ -46,7 +41,7 @@ class QT_PT_sidebar(Panel):
         settings = context.scene.topology_transitions
 
         example = layout.box()
-        example.label(text="Example Mesh")
+        example.label(text="True Density Examples")
         example.operator(
             "object.quad_transition_add_example_plane",
             text="Add All Transition Examples",
@@ -68,11 +63,42 @@ class QT_PT_sidebar(Panel):
             text="Solve Selected N-gons",
             icon="FACESEL",
         )
-        repair.label(text="Unsupported faces stay selected", icon="INFO")
-        repair.label(text="Select both faces for a mixed tri + n-gon repair")
+        repair.label(text="Local pairs are preferred automatically", icon="INFO")
+        repair.label(text="Isolated faces carry splits through quad rings")
+
+        integrity = layout.box()
+        integrity.label(text="Mesh Integrity")
+        integrity.operator(
+            "mesh.quad_transition_check_manifold",
+            text="Check & Select Manifold Issues",
+            icon="SHADING_WIRE",
+        )
+        row = integrity.row(align=True)
+        previous_issue = row.operator(
+            "mesh.quad_transition_manifold_step",
+            text="Previous Issue",
+            icon="TRIA_LEFT",
+        )
+        previous_issue.direction = -1
+        next_issue = row.operator(
+            "mesh.quad_transition_manifold_step",
+            text="Next Issue",
+            icon="TRIA_RIGHT",
+        )
+        next_issue.direction = 1
+        if settings.manifold_object_name:
+            integrity.label(
+                text=f"{settings.manifold_component_count} areas, "
+                f"{settings.manifold_issue_count} issue elements"
+            )
+            integrity.label(
+                text=f"Open {settings.manifold_open_edge_count} | "
+                f"Over-connected {settings.manifold_nonmanifold_edge_count}"
+            )
+            integrity.label(text=settings.manifold_current_kind)
 
         selection = layout.box()
-        selection.label(text="1. Select a patch or closed boundary loop")
+        selection.label(text="1. Select faces or a closed boundary loop")
         selection.label(text="Interior faces may be quads, tris, or n-gons")
         selection.label(text="Boundary needs four sides and the required width")
         selection.label(text="Make an incoming boundary edge active if needed")
@@ -118,15 +144,18 @@ class QT_PT_sidebar(Panel):
 
         flow = layout.box()
         flow.label(text="Quad Flow Scroll")
-        flow.label(text="Browse one-quad-wide face loops and strips")
+        flow.label(text="Browse whole pole-bounded quad regions")
+        flow.prop(settings, "flow_mode", text="")
         row = flow.row(align=True)
         row.prop(settings, "flow_scope", text="")
         row.prop(settings, "flow_min_edges")
-        row = flow.row(align=True)
-        row.prop(settings, "flow_sort", text="")
+        flow.prop(settings, "flow_sort", text="")
         row = flow.row(align=True)
         row.prop(settings, "flow_focus_view")
-        row.prop(settings, "flow_show_neighbors")
+        if settings.flow_mode == "REGIONS":
+            row.prop(settings, "flow_show_full_map")
+        else:
+            row.prop(settings, "flow_show_neighbors")
 
         row = flow.row(align=True)
         previous = row.operator(
@@ -149,37 +178,34 @@ class QT_PT_sidebar(Panel):
 
         if settings.flow_count:
             metrics = flow.column(align=True)
+            noun = "Region" if settings.flow_mode == "REGIONS" else "Band"
             metrics.label(
-                text=f"Quad Flow {settings.flow_index + 1} / "
-                f"{settings.flow_count}  •  {settings.flow_quad_count} quads"
+                text=f"{noun} {settings.flow_index + 1} / "
+                f"{settings.flow_count} | {settings.flow_quad_count} quads"
             )
+            metrics.label(text=f"Boundary/flow length {settings.flow_length:.3f}")
             metrics.label(
-                text=f"Length {settings.flow_length:.3f}  •  "
-                f"Smoothness {settings.flow_alignment:.0%}"
+                text=f"{settings.flow_start_label} -> {settings.flow_end_label}"
             )
-            if settings.flow_closed:
-                metrics.label(text="Closed loop")
-            else:
-                metrics.label(
-                    text=f"{settings.flow_start_label} → {settings.flow_end_label}"
-                )
-            metrics.label(
-                text=f"{settings.flow_neighbor_count} parallel face bands"
-            )
+            metrics.label(text=f"{settings.flow_neighbor_count} adjacent flows")
 
         note = layout.column(align=True)
         note.label(text="Boundary vertices are always pinned.")
-        note.label(text="Triangles and n-gons are never inserted.")
+        note.label(text="Transition output remains all-quad.")
 
 
 CLASSES = (QT_PT_sidebar,)
 
 
 def register() -> None:
+    from bpy.utils import register_class
+
     for cls in CLASSES:
-        bpy.utils.register_class(cls)
+        register_class(cls)
 
 
 def unregister() -> None:
+    from bpy.utils import unregister_class
+
     for cls in reversed(CLASSES):
-        bpy.utils.unregister_class(cls)
+        unregister_class(cls)

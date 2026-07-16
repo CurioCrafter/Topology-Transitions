@@ -245,6 +245,7 @@ def setup_torus_flow() -> None:
         face.select_set(False)
     bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=False)
     settings = bpy.context.scene.topology_transitions
+    settings.flow_mode = "FACE_STRIPS"
     settings.flow_scope = "ALL"
     settings.flow_sort = "SIDE_TO_SIDE"
     settings.flow_min_edges = 4
@@ -260,8 +261,8 @@ def setup_torus_flow() -> None:
 def setup_pole_flow() -> None:
     setup_transition(
         apply=True,
-        title="QUAD FACE FLOW THROUGH A TRANSITION",
-        subtitle="ONE-QUAD-WIDE BAND  •  CYAN PARALLEL BANDS",
+        title="WHOLE QUAD FLOW REGIONS THROUGH A TRANSITION",
+        subtitle="POLE-BOUNDED PATCHES  |  COMPLETE COLOURED FLOW MAP",
     )
     bm = bmesh.from_edit_mesh(bpy.context.edit_object.data)
     for vertex in bm.verts:
@@ -276,10 +277,11 @@ def setup_pole_flow() -> None:
         destructive=False,
     )
     settings = bpy.context.scene.topology_transitions
+    settings.flow_mode = "REGIONS"
     settings.flow_scope = "ALL"
-    settings.flow_sort = "SIDE_TO_SIDE"
+    settings.flow_sort = "LARGEST"
     settings.flow_min_edges = 1
-    settings.flow_show_neighbors = True
+    settings.flow_show_full_map = True
     settings.flow_focus_view = True
     session = build_flow_session(bpy.context)
     settings.flow_index = max(
