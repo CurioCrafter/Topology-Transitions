@@ -202,9 +202,46 @@ def selection_snapshot(obj):
     return {
         "face_count": len(selected),
         "boundary_coordinates": {tuple(vertex.co) for vertex in boundary_vertices},
+        "boundary_edge_coordinates": {
+            frozenset(tuple(vertex.co) for vertex in edge.verts)
+            for edge in boundary_edges
+        },
         "boundary_face_counts": sorted(len(edge.link_faces) for edge in boundary_edges),
         "bvh": source_bvh,
     }
+
+
+def assert_selected_faces_connected(selected_faces, preset: str) -> None:
+    selected_set = set(selected_faces)
+    pending = [selected_faces[0]] if selected_faces else []
+    visited = set()
+    while pending:
+        face = pending.pop()
+        if face in visited:
+            continue
+        visited.add(face)
+        for edge in face.edges:
+            pending.extend(
+                linked
+                for linked in edge.link_faces
+                if linked in selected_set and linked not in visited
+            )
+    if visited != selected_set:
+        raise AssertionError(f"{preset}: inserted faces are disconnected")
+
+
+def assert_internal_loop_directions(selected_faces, preset: str) -> None:
+    selected_set = set(selected_faces)
+    for edge in {edge for face in selected_faces for edge in face.edges}:
+        linked = [face for face in edge.link_faces if face in selected_set]
+        if len(linked) != 2:
+            continue
+        uses = []
+        for loop in edge.link_loops:
+            if loop.face in selected_set:
+                uses.append((loop.vert, loop.link_loop_next.vert))
+        if len(uses) != 2 or uses[0] != (uses[1][1], uses[1][0]):
+            raise AssertionError(f"{preset}: folded shared edge direction detected")
 
 
 def assert_transition(
@@ -315,6 +352,126 @@ def assert_transition(
         f"QT_PATTERN_PASS preset={preset} selected_quads={len(selected_faces)} "
         f"poles={len(poles)} padding={padding} curved={curved}"
     )
+
+
+def assert_single_quad_transition(preset: str, *, padding: int = 1) -> None:
+    clear_scene()
+    obj, columns, rows = create_grid(
+        f"single_{preset.lower()}",
+        1,
+        1,
+        padding=padding,
+    )
+    before = selection_snapshot(obj)
+    original_total_faces = columns * rows
+    bm = bmesh.from_edit_mesh(obj.data)
+    _incoming, _outgoing, layout, template = _make_template_and_layout(
+        bm,
+        preset,
+        "AUTO",
+        False,
+        "CENTER",
+        False,
+        1.0,
+    )
+    if not layout.single_quad_insertion or template.boundary_edge_count != 4:
+        raise AssertionError(f"{preset}: did not choose the single-quad insertion")
+
+    validation = bpy.ops.mesh.quad_transition_validate(
+        transition=preset,
+        pole_side="CENTER",
+    )
+    if validation != {"FINISHED"}:
+        raise AssertionError(f"{preset}: single-quad validation returned {validation}")
+    result = bpy.ops.mesh.quad_transition_apply(
+        transition=preset,
+        pole_side="CENTER",
+        relax_strength=0.55,
+        relax_iterations=24,
+        conform_surface=True,
+    )
+    if result != {"FINISHED"}:
+        raise AssertionError(f"{preset}: single-quad apply returned {result}")
+
+    bm = bmesh.from_edit_mesh(obj.data)
+    selected_faces = [face for face in bm.faces if face.select]
+    assert_selected_faces_connected(selected_faces, preset)
+    assert_internal_loop_directions(selected_faces, preset)
+    if len(selected_faces) != len(template.faces):
+        raise AssertionError(
+            f"{preset}: expected {len(template.faces)} inserted quads, "
+            f"found {len(selected_faces)}"
+        )
+    expected_total = original_total_faces - 1 + len(template.faces)
+    if len(bm.faces) != expected_total:
+        raise AssertionError(
+            f"{preset}: expected {expected_total} total faces, found {len(bm.faces)}"
+        )
+    if any(
+        len(face.verts) != 4 or face.calc_area() <= 1.0e-12 for face in bm.faces
+    ):
+        raise AssertionError(f"{preset}: generated a zero-area or non-quad face")
+    if any(len(edge.link_faces) > 2 for edge in bm.edges):
+        raise AssertionError(f"{preset}: generated a non-manifold edge")
+
+    original_boundary = before["boundary_coordinates"]
+    outer_edges = [
+        edge
+        for edge in bm.edges
+        if all(tuple(vertex.co) in original_boundary for vertex in edge.verts)
+    ]
+    if len(outer_edges) != 4:
+        raise AssertionError(f"{preset}: selected quad boundary was not preserved")
+    outer_edge_coordinates = {
+        frozenset(tuple(vertex.co) for vertex in edge.verts) for edge in outer_edges
+    }
+    if outer_edge_coordinates != before["boundary_edge_coordinates"]:
+        raise AssertionError(f"{preset}: selected quad boundary endpoints changed")
+    if sorted(len(edge.link_faces) for edge in outer_edges) != before[
+        "boundary_face_counts"
+    ]:
+        raise AssertionError(f"{preset}: outside face connectivity changed")
+    inserted_vertices = {
+        vertex for face in selected_faces for vertex in face.verts
+    }
+    if any(abs(vertex.co.z) > 1.0e-7 for vertex in inserted_vertices):
+        raise AssertionError(f"{preset}: planar insertion moved away from the source")
+
+    print(
+        f"QT_SINGLE_QUAD_PASS preset={preset} inserted={len(selected_faces)} "
+        f"embedded={bool(padding)} boundary_links="
+        f"{sorted(len(edge.link_faces) for edge in outer_edges)}"
+    )
+
+
+def assert_single_quad_edge_loop_transition() -> None:
+    clear_scene()
+    obj, _columns, _rows = create_grid("single_edge_loop", 1, 1, padding=0)
+    bm = bmesh.from_edit_mesh(obj.data)
+    for face in bm.faces:
+        face.select_set(False)
+    for vertex in bm.verts:
+        vertex.select_set(False)
+    for edge in bm.edges:
+        edge.select_set(True)
+    bm.select_mode = {"EDGE"}
+    bpy.context.tool_settings.mesh_select_mode = (False, True, False)
+    bm.select_flush_mode()
+    bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=False)
+    result = bpy.ops.mesh.quad_transition_apply(
+        transition="FIVE_TO_THREE",
+        relax_iterations=8,
+        conform_surface=True,
+    )
+    if result != {"FINISHED"}:
+        raise AssertionError(f"Single-quad edge-loop apply returned {result}")
+    bm = bmesh.from_edit_mesh(obj.data)
+    selected_faces = [face for face in bm.faces if face.select]
+    if len(selected_faces) != 31 or any(len(face.verts) != 4 for face in bm.faces):
+        raise AssertionError("Single-quad edge loop did not become 31 quads")
+    assert_selected_faces_connected(selected_faces, "single_edge_loop")
+    assert_internal_loop_directions(selected_faces, "single_edge_loop")
+    print("QT_SINGLE_QUAD_EDGE_LOOP_PASS preset=FIVE_TO_THREE quads=31")
 
 
 def assert_invalid_selection_is_unchanged() -> None:
@@ -1002,6 +1159,10 @@ def main() -> None:
     try:
         for preset, width, height, faces, poles in PRESETS:
             assert_transition(preset, width, height, faces, poles)
+        for preset, _width, _height, _faces, _poles in PRESETS:
+            assert_single_quad_transition(preset)
+        assert_single_quad_transition("FIVE_TO_THREE", padding=0)
+        assert_single_quad_edge_loop_transition()
         assert_transition("FIVE_TO_THREE", 5, 2, 16, 2, padding=1, curved=True)
         assert_transition("ONE_TO_TWO", 2, 2, 5, 1, mirror=True)
         assert_transition("FIVE_TO_THREE", 5, 1, 11, 2)
@@ -1019,7 +1180,7 @@ def main() -> None:
         assert_invalid_selection_is_unchanged()
         assert_shape_key_is_unchanged()
         print(
-            "QT_BLENDER_SMOKE_PASS patterns=13 rejection_cases=2 "
+            "QT_BLENDER_SMOKE_PASS patterns=13 single_quad=10 rejection_cases=2 "
             "preview=1 external_projection=1 quad_flow=3 example_atlas=1 "
             "repair=6 boundary_input=2 manifold=3 connected_ribbon=2"
         )

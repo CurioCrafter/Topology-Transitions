@@ -42,7 +42,16 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--shot",
-        choices=("before", "after", "flow", "pole", "example", "ribbon", "bake"),
+        choices=(
+            "before",
+            "after",
+            "flow",
+            "pole",
+            "example",
+            "ribbon",
+            "bake",
+            "single",
+        ),
         required=True,
     )
     parser.add_argument("--output-dir", type=Path)
@@ -64,6 +73,7 @@ OUTPUT_NAMES = {
     "example": "05-example-plane-strip.png",
     "ribbon": "06-connected-multi-strip.png",
     "bake": "07-bake-ray-preview.png",
+    "single": "08-single-quad-transition.png",
 }
 
 
@@ -232,6 +242,41 @@ def setup_transition(
         loop_triangles=False,
         destructive=False,
     )
+
+
+def setup_single_quad_transition() -> None:
+    clear_scene()
+    create_text("ONE QUAD  ->  REAL 5 TO 3 INSERTION", (0.0, 2.15, 0.04), 0.3)
+    create_text(
+        "CONNECTED ALL-QUAD FRAME  /  NEIGHBORS UNCHANGED",
+        (0.0, -2.15, 0.04),
+        0.2,
+    )
+    obj = create_grid("SingleQuadFiveToThree", 3, 3)
+    bm = bmesh.from_edit_mesh(obj.data)
+    bm.faces.ensure_lookup_table()
+    for face in bm.faces:
+        center = face.calc_center_median()
+        face.select_set(abs(center.x) < 0.1 and abs(center.y) < 0.1)
+    active_edges = [
+        edge
+        for edge in bm.edges
+        if edge.select
+        and all(abs(vertex.co.y - 0.5) < 1.0e-6 for vertex in edge.verts)
+    ]
+    bm.select_history.clear()
+    bm.select_history.add(active_edges[0])
+    bm.select_flush_mode()
+    bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=False)
+    result = bpy.ops.mesh.quad_transition_apply(
+        transition="FIVE_TO_THREE",
+        pole_side="CENTER",
+        relax_strength=0.55,
+        relax_iterations=24,
+        conform_surface=True,
+    )
+    if result != {"FINISHED"}:
+        raise RuntimeError(f"Single-quad screenshot setup returned {result}")
 
 
 def setup_torus_flow() -> None:
@@ -554,6 +599,9 @@ def setup() -> float:
         configure_view(top=True)
     elif ARGS.shot == "ribbon":
         setup_connected_ribbon()
+        configure_view(top=True)
+    elif ARGS.shot == "single":
+        setup_single_quad_transition()
         configure_view(top=True)
     else:
         setup_bake_preview()

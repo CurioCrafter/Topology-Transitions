@@ -220,9 +220,9 @@ class QT_PT_sidebar(Panel):
             integrity.label(text=settings.manifold_current_kind)
 
         selection = layout.box()
-        selection.label(text="1. Select faces or a closed boundary loop")
-        selection.label(text="Interior faces may be quads, tris, or n-gons")
-        selection.label(text="Boundary needs four sides and the required width")
+        selection.label(text="1. Select one quad, a patch, or its boundary")
+        selection.label(text="One quad gets a connected local transition stamp")
+        selection.label(text="Larger patches use the true four-sided boundary")
         selection.label(text="Make an incoming boundary edge active if needed")
 
         pattern = layout.box()
@@ -312,7 +312,8 @@ class QT_PT_sidebar(Panel):
             metrics.label(text=f"{settings.flow_neighbor_count} adjacent flows")
 
         note = layout.column(align=True)
-        note.label(text="Boundary vertices are always pinned.")
+        note.label(text="One-quad stamps keep neighbor edges pinned.")
+        note.label(text="Larger patch boundary vertices are pinned.")
         note.label(text="Transition output remains all-quad.")
 
 

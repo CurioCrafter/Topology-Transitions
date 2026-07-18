@@ -7,10 +7,59 @@ from topology_transitions.core import (
     TransitionError,
     build_transition_template,
     choose_pole_slot,
+    frame_transition_for_single_quad,
     template_adjacency,
     template_edges,
     validate_template,
 )
+
+
+def _signed_area(points):
+    return 0.5 * sum(
+        first.u * second.v - second.u * first.v
+        for first, second in zip(points, points[1:] + points[:1], strict=True)
+    )
+
+
+def _orientation(first, second, third):
+    return (second.u - first.u) * (third.v - first.v) - (
+        second.v - first.v
+    ) * (third.u - first.u)
+
+
+def _segments_cross(first, second, third, fourth):
+    return (
+        _orientation(first, second, third) * _orientation(first, second, fourth) < 0
+        and _orientation(third, fourth, first) * _orientation(third, fourth, second)
+        < 0
+    )
+
+
+def _assert_planar_embedding(test_case, template):
+    edge_uses = {}
+    normalized_faces = []
+    for face in template.faces:
+        area = _signed_area([template.vertices[key] for key in face])
+        test_case.assertGreater(abs(area), 1.0e-8)
+        normalized_faces.append(tuple(reversed(face)) if area < 0 else face)
+    for face in normalized_faces:
+        for index, first in enumerate(face):
+            second = face[(index + 1) % 4]
+            edge_uses.setdefault(tuple(sorted((first, second))), []).append(
+                (first, second)
+            )
+    for uses in edge_uses.values():
+        if len(uses) == 2:
+            test_case.assertEqual(uses[0], (uses[1][1], uses[1][0]))
+
+    edges = list(edge_uses)
+    for index, first_edge in enumerate(edges):
+        first_points = [template.vertices[key] for key in first_edge]
+        for second_edge in edges[index + 1 :]:
+            if set(first_edge) & set(second_edge):
+                continue
+            second_points = [template.vertices[key] for key in second_edge]
+            test_case.assertFalse(_segments_cross(*first_points, *second_points))
 
 
 class TransitionTemplateTests(unittest.TestCase):
@@ -49,6 +98,23 @@ class TransitionTemplateTests(unittest.TestCase):
                     incoming, outgoing, height=1
                 )
                 validate_template(template)
+
+    def test_every_preset_builds_as_a_four_edge_single_quad_insertion(self):
+        for identifier, (incoming, outgoing, _label) in TRANSITIONS.items():
+            with self.subTest(identifier=identifier):
+                inner = self._build_for_rectangular_patch(
+                    incoming, outgoing, height=1
+                )
+                template = frame_transition_for_single_quad(inner)
+                validate_template(template)
+                edges = template_edges(template.faces)
+                self.assertEqual(sum(count == 1 for count in edges.values()), 4)
+                self.assertEqual(template.boundary_edge_count, 4)
+                self.assertEqual(template.pole_keys, {
+                    f"single:transition:{key}" for key in inner.pole_keys
+                })
+                self.assertTrue(template.relax_locked_keys)
+                _assert_planar_embedding(self, template)
 
     def test_two_loop_patterns_have_two_valence_three_poles(self):
         for incoming, outgoing in ((5, 3), (3, 5), (3, 1), (1, 3), (4, 2), (2, 4)):
