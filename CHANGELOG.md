@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.1 - 2026-07-17
+
+- Made **Apply Transition** accept one selected quad by inserting a connected
+  all-quad local adapter around the requested real transition pattern.
+- Added support for the same one-quad workflow when the quad's closed edge loop
+  is selected instead of the face.
+- Added fitted-face fold/intersection validation before BMesh mutation, catching
+  invalid pole-spacing or selection-shape combinations before the mesh changes.
+- Added source and installed-copy smoke coverage for all eight single-quad
+  transition insertions plus a packaged five-to-three single-quad proof.
+- Documented the single-quad adapter tradeoff: neighboring edges stay fixed, but
+  extra local adapter poles are added around the real transition.
+
 ## 0.6.0 - 2026-07-16
 
 - Added **Draw Connected Multi-Strip**: one surface stroke grows every selected

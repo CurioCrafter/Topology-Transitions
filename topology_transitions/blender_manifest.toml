@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "topology_transitions"
-version = "0.6.0"
+version = "0.6.1"
 name = "Topology Transitions"
 tagline = "Draw, transition, inspect, and bake connected quad topology"
 maintainer = "CurioCrafter"

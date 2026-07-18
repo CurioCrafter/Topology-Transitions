@@ -70,17 +70,23 @@ The full workflow and implementation boundaries are documented in
 
 In Edit Mode, select either:
 
+- one quad to insert a local connected transition stamp inside that face;
 - a connected four-sided face patch; its interior may contain quads, triangles,
   or n-gons; or
 - the closed outside edge loop of that patch.
 
 Choose the transition and run **Validate**, then **Apply Transition**. The
 outside boundary is pinned while the interior is replaced with the selected
-all-quad template. A 5 -> 3 transition needs five incoming face columns.
+all-quad template. A 5 -> 3 true patch replacement needs five incoming face
+columns. A one-quad insertion preserves the selected quad's four outside edges
+and adds a connected all-quad adapter around the real transition, so neighboring
+faces do not have to be rebuilt.
 
 ![Selected five-column patch](docs/images/01-select-patch.png)
 
 ![Completed five-to-three transition](docs/images/02-five-to-three-result.png)
+
+![One selected quad containing a local five-to-three insertion](docs/images/08-single-quad-transition.png)
 
 The selected region still needs one disk-like boundary with four detectable
 corners and compatible side parity. A loose, open edge chain is not enough to
@@ -187,11 +193,15 @@ that every boundary is a mistake.
 
 ## Safety and limitations
 
-- Apply Transition requires a compatible four-sided region. It does not decide
-  artistic pole placement for an entire character.
+- Apply Transition accepts one selected quad, a compatible four-sided region, or
+  that region's closed boundary loop. It does not decide artistic pole
+  placement for an entire character.
+- A one-quad insertion is intentionally a local adapter: it keeps the four
+  neighboring edges unchanged, but adds extra adapter poles around the real
+  transition pattern.
 - Every accepted transition validates an all-quad connected disk, manifold edge
   counts, expected pole valence, nonzero face area, preserved boundary
-  coordinates, and preserved outside connectivity.
+  coordinates, preserved outside connectivity, and fitted-face fold checks.
 - Repair propagation can add full edge paths across a large quad mesh. The
   operator reports how many splits and surrounding quads it changed.
 - Surface projection can choose the wrong sheet on tightly overlapping meshes;

@@ -50,6 +50,7 @@ class TransitionTemplate:
     left_keys: list[str] = field(default_factory=list)
     right_keys: list[str] = field(default_factory=list)
     pole_keys: set[str] = field(default_factory=set)
+    relax_locked_keys: set[str] = field(default_factory=set)
 
     @property
     def boundary_keys(self) -> set[str]:
@@ -441,6 +442,167 @@ def build_transition_template(
     return t
 
 
+def _boundary_cycle(template: TransitionTemplate) -> list[str]:
+    """Return a clockwise boundary cycle without repeated corner keys."""
+
+    cycle = list(template.top_keys)
+    cycle.extend(template.right_keys[1:])
+    cycle.extend(reversed(template.bottom_keys[:-1]))
+    cycle.extend(reversed(template.left_keys[1:-1]))
+    return cycle
+
+
+def _odd_side_partition(total: int, targets: Sequence[int]) -> tuple[int, ...]:
+    """Split an even loop into four positive odd arcs near ``targets``."""
+
+    if len(targets) != 4 or total < 4 or total % 2:
+        raise TransitionError("A single-quad frame needs an even boundary loop")
+    candidates: list[tuple[tuple[int, int, tuple[int, ...]], tuple[int, ...]]] = []
+    for first in range(1, total - 2, 2):
+        for second in range(1, total - first - 1, 2):
+            for third in range(1, total - first - second, 2):
+                fourth = total - first - second - third
+                if fourth < 1 or fourth % 2 == 0:
+                    continue
+                values = (first, second, third, fourth)
+                differences = tuple(
+                    abs(value - target)
+                    for value, target in zip(values, targets, strict=True)
+                )
+                score = (
+                    sum(difference * difference for difference in differences),
+                    max(differences),
+                    values,
+                )
+                candidates.append((score, values))
+    if not candidates:
+        raise TransitionError("The transition boundary cannot fit a quad frame")
+    return min(candidates, key=lambda item: item[0])[1]
+
+
+def frame_transition_for_single_quad(
+    inner: TransitionTemplate,
+    *,
+    inner_margin: float = 0.18,
+    guard_margin: float = 0.07,
+) -> TransitionTemplate:
+    """Wrap a transition disk in an all-quad frame with a four-edge boundary.
+
+    A preset normally needs several boundary edges, so it cannot replace one
+    embedded quad directly without splitting adjacent faces.  This adapter
+    keeps the selected quad's four shared edges untouched and places the real
+    preset inside two connected rings.  The added extraordinary vertices are
+    the topological cost of making the operation local and universally safe.
+    """
+
+    validate_template(inner)
+    if not 0.0 < guard_margin < inner_margin < 0.5:
+        raise TransitionError(
+            "Single-quad frame margins must satisfy 0 < guard < inner < 0.5"
+        )
+
+    template = TransitionTemplate(inner.input_count, inner.output_count)
+    outer = {
+        "top_left": "single:outer:top_left",
+        "top_right": "single:outer:top_right",
+        "bottom_right": "single:outer:bottom_right",
+        "bottom_left": "single:outer:bottom_left",
+    }
+    outer_coordinates = {
+        outer["top_left"]: (0.0, 1.0),
+        outer["top_right"]: (1.0, 1.0),
+        outer["bottom_right"]: (1.0, 0.0),
+        outer["bottom_left"]: (0.0, 0.0),
+    }
+    for key, (u, v) in outer_coordinates.items():
+        template.vertices[key] = VertexSpec(key, u, v, boundary=True)
+    template.top_keys = [outer["top_left"], outer["top_right"]]
+    template.bottom_keys = [outer["bottom_left"], outer["bottom_right"]]
+    template.left_keys = [outer["top_left"], outer["bottom_left"]]
+    template.right_keys = [outer["top_right"], outer["bottom_right"]]
+
+    inner_scale = 1.0 - (2.0 * inner_margin)
+    inner_keys = {key: f"single:transition:{key}" for key in inner.vertices}
+    for key, spec in inner.vertices.items():
+        mapped = inner_keys[key]
+        template.vertices[mapped] = VertexSpec(
+            mapped,
+            inner_margin + (inner_scale * spec.u),
+            inner_margin + (inner_scale * spec.v),
+        )
+    template.faces.extend(
+        tuple(inner_keys[key] for key in face) for face in inner.faces
+    )
+    template.pole_keys = {inner_keys[key] for key in inner.pole_keys}
+
+    source_cycle = _boundary_cycle(inner)
+    inner_cycle = [inner_keys[key] for key in source_cycle]
+    side_counts = _odd_side_partition(
+        len(inner_cycle),
+        (
+            len(inner.top_keys) - 1,
+            len(inner.right_keys) - 1,
+            len(inner.bottom_keys) - 1,
+            len(inner.left_keys) - 1,
+        ),
+    )
+    guard_keys: list[str] = []
+    guard_scale = 1.0 - (2.0 * guard_margin)
+    for side, segments in enumerate(side_counts):
+        for _step in range(segments):
+            key = f"single:guard:{len(guard_keys)}"
+            source = inner.vertices[source_cycle[len(guard_keys)]]
+            u = guard_margin + (guard_scale * source.u)
+            v = guard_margin + (guard_scale * source.v)
+            template.vertices[key] = VertexSpec(key, u, v)
+            guard_keys.append(key)
+
+    boundary_size = len(inner_cycle)
+    for index, guard_key in enumerate(guard_keys):
+        following = (index + 1) % boundary_size
+        template.faces.append(
+            (
+                guard_key,
+                guard_keys[following],
+                inner_cycle[following],
+                inner_cycle[index],
+            )
+        )
+
+    outer_cycle = [
+        outer["top_left"],
+        outer["top_right"],
+        outer["bottom_right"],
+        outer["bottom_left"],
+    ]
+    first_index = 0
+    for side, arc_length in enumerate(side_counts):
+        arc = [
+            guard_keys[(first_index + offset) % boundary_size]
+            for offset in range(arc_length + 1)
+        ]
+        polygon = [
+            outer_cycle[side],
+            outer_cycle[(side + 1) % 4],
+            *reversed(arc),
+        ]
+        for index in range(1, len(polygon) - 2, 2):
+            template.faces.append(
+                (
+                    polygon[0],
+                    polygon[index],
+                    polygon[index + 1],
+                    polygon[index + 2],
+                )
+            )
+        first_index = (first_index + arc_length) % boundary_size
+
+    template.relax_locked_keys.update(guard_keys)
+    template.relax_locked_keys.update(inner_cycle)
+    validate_template(template)
+    return template
+
+
 def template_edges(
     faces: Iterable[Sequence[str]],
 ) -> dict[tuple[str, str], int]:
@@ -464,10 +626,7 @@ def template_adjacency(template: TransitionTemplate) -> dict[str, set[str]]:
 
 
 def _expected_boundary_edges(template: TransitionTemplate) -> set[tuple[str, str]]:
-    cycle = list(template.top_keys)
-    cycle.extend(template.right_keys[1:])
-    cycle.extend(reversed(template.bottom_keys[:-1]))
-    cycle.extend(reversed(template.left_keys[1:-1]))
+    cycle = _boundary_cycle(template)
     return {
         tuple(sorted((cycle[i], cycle[(i + 1) % len(cycle)])))
         for i in range(len(cycle))
@@ -504,6 +663,8 @@ def validate_template(template: TransitionTemplate) -> None:
     used = {key for face in template.faces for key in face}
     if used != set(template.vertices):
         raise TransitionError("Template has isolated or unused vertices")
+    if not template.relax_locked_keys <= template.interior_keys:
+        raise TransitionError("Relaxation locks must reference interior vertices")
 
     adjacency = template_adjacency(template)
     pending = [next(iter(template.vertices))]

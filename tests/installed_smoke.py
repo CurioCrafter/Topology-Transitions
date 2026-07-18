@@ -69,6 +69,31 @@ def create_triangle_pair():
     return obj
 
 
+def create_single_quad():
+    bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.ops.object.select_all(action="DESELECT")
+    mesh = bpy.data.meshes.new("installed_single_quad_mesh")
+    mesh.from_pydata(
+        ((0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0), (0.0, 1.0, 0.0)),
+        [],
+        ((0, 1, 2, 3),),
+    )
+    mesh.update()
+    obj = bpy.data.objects.new("InstalledSingleQuad", mesh)
+    bpy.context.collection.objects.link(obj)
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+    bpy.ops.object.mode_set(mode="EDIT")
+    bm = bmesh.from_edit_mesh(mesh)
+    bm.select_mode = {"FACE"}
+    bpy.context.tool_settings.mesh_select_mode = (False, False, True)
+    for face in bm.faces:
+        face.select_set(True)
+    bm.select_flush_mode()
+    bmesh.update_edit_mesh(mesh, loop_triangles=True, destructive=False)
+    return obj
+
+
 def create_connected_ribbon_fixture():
     bpy.ops.object.mode_set(mode="OBJECT")
     bpy.ops.object.select_all(action="SELECT")
@@ -130,7 +155,7 @@ def main() -> None:
         )
     if not hasattr(bpy.types.Scene, "topology_transitions"):
         raise AssertionError("Installed add-on did not register scene settings")
-    if topology_transitions.bl_info["version"] != (0, 6, 0):
+    if topology_transitions.bl_info["version"] != (0, 6, 1):
         raise AssertionError(
             f"Installed add-on reported {topology_transitions.bl_info['version']}"
         )
@@ -150,6 +175,27 @@ def main() -> None:
     selected = [face for face in bm.faces if face.select]
     if len(selected) != 7 or any(len(face.verts) != 4 for face in selected):
         raise AssertionError("Installed copy did not generate the expected seven quads")
+    single = create_single_quad()
+    single_result = bpy.ops.mesh.quad_transition_apply(
+        transition="FIVE_TO_THREE",
+        relax_iterations=8,
+        conform_surface=True,
+    )
+    single_bm = bmesh.from_edit_mesh(single.data)
+    single_selected = [face for face in single_bm.faces if face.select]
+    if (
+        single_result != {"FINISHED"}
+        or len(single_selected) != 31
+        or any(len(face.verts) != 4 for face in single_bm.faces)
+    ):
+        raise AssertionError(
+            f"Installed single-quad insertion failed: {single_result}"
+        )
+    bpy.ops.object.mode_set(mode="OBJECT")
+    single.select_set(False)
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+    bpy.ops.object.mode_set(mode="EDIT")
     settings = bpy.context.scene.topology_transitions
     settings.flow_mode = "REGIONS"
     settings.flow_scope = "ALL"
@@ -238,8 +284,9 @@ def main() -> None:
     print(
         f"QT_INSTALLED_SMOKE_PASS module={loaded} "
         f"selected_quads={len(selected)} flows={flow_count} "
-        f"flow_quads={strip_quads} example_quads=186 transitions=8 repairs=1 "
-        f"open_edges=4 ribbon_quads=6 shrinkwrap=1 bake_cage=1"
+        f"flow_quads={strip_quads} single_quad={len(single_selected)} "
+        f"example_quads=186 transitions=8 repairs=1 open_edges=4 "
+        f"ribbon_quads=6 shrinkwrap=1 bake_cage=1"
     )
 
 

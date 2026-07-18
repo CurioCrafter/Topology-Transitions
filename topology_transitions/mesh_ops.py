@@ -27,6 +27,7 @@ class PatchLayout:
     width: int
     height: int
     active_side_used: bool
+    single_quad_insertion: bool = False
 
     @property
     def left_segments(self) -> int:
@@ -113,6 +114,13 @@ def _faces_inside_selected_edge_loop(bm: Any) -> list[Any] | None:
             key=lambda faces: (len(faces), min(face.index for face in faces)),
         )
     )
+
+
+def _selected_region_faces(bm: Any) -> list[Any]:
+    enclosed = _faces_inside_selected_edge_loop(bm)
+    if enclosed is not None:
+        return enclosed
+    return [face for face in bm.faces if face.select and not face.hide]
 
 
 def _ordered_boundary(boundary_edges: set[Any]) -> tuple[list[Any], list[Any]]:
@@ -231,6 +239,75 @@ def _validate_structured_rectangle(
         )
 
 
+def analyze_single_quad(
+    bm: Any,
+    *,
+    axis_mode: str = "AUTO",
+    flip_flow: bool = False,
+) -> PatchLayout | None:
+    """Return a four-sided layout when the selection is exactly one quad."""
+
+    bm.verts.ensure_lookup_table()
+    bm.edges.ensure_lookup_table()
+    bm.faces.ensure_lookup_table()
+    selected_faces = _selected_region_faces(bm)
+    if len(selected_faces) != 1 or len(selected_faces[0].verts) != 4:
+        return None
+
+    face = selected_faces[0]
+    patch_edges = set(face.edges)
+    if any(len(edge.link_faces) > 2 for edge in patch_edges):
+        raise TransitionError("The selected quad touches a non-manifold edge")
+    boundary_vertices, _ordered_edges = _ordered_boundary(patch_edges)
+    paths = [
+        [boundary_vertices[index], boundary_vertices[(index + 1) % 4]]
+        for index in range(4)
+    ]
+    active_path = _active_path_index(bm, paths)
+    auto_axis = active_path % 2 if active_path is not None else 0
+    if axis_mode == "ALTERNATE":
+        axis = 1 - auto_axis
+    elif axis_mode == "AUTO":
+        axis = auto_axis
+    else:
+        raise TransitionError(f"Unknown axis mode: {axis_mode}")
+
+    start = axis
+    active_side_used = False
+    if active_path in {axis, axis + 2}:
+        start = active_path
+        active_side_used = True
+    if flip_flow:
+        start = (start + 2) % 4
+
+    full_top = list(paths[start])
+    right = list(paths[(start + 1) % 4])
+    opposite = list(paths[(start + 2) % 4])
+    left = list(reversed(paths[(start + 3) % 4]))
+    bottom = list(reversed(opposite))
+    return PatchLayout(
+        selected_faces=[face],
+        patch_edges=patch_edges,
+        patch_vertices=set(face.verts),
+        boundary_edges=patch_edges,
+        boundary_vertices=boundary_vertices,
+        top=full_top,
+        bottom=bottom,
+        left=left,
+        right=right,
+        physical_corners=(
+            full_top[0],
+            full_top[-1],
+            opposite[-1],
+            opposite[0],
+        ),
+        width=1,
+        height=1,
+        active_side_used=active_side_used,
+        single_quad_insertion=True,
+    )
+
+
 def analyze_selected_patch(
     bm: Any,
     *,
@@ -252,9 +329,7 @@ def analyze_selected_patch(
     bm.verts.ensure_lookup_table()
     bm.edges.ensure_lookup_table()
     bm.faces.ensure_lookup_table()
-    selected_faces = _faces_inside_selected_edge_loop(bm)
-    if selected_faces is None:
-        selected_faces = [face for face in bm.faces if face.select and not face.hide]
+    selected_faces = _selected_region_faces(bm)
     if not selected_faces:
         raise TransitionError(
             "Select a rectangular face region or its closed boundary edge loop"

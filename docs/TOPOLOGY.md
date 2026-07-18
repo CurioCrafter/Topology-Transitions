@@ -78,3 +78,18 @@ The original BMesh is copied before mutation. If an apply-time check or Blender 
 ## Patch input topology
 
 The transition template depends on the outside boundary, not on the face types being replaced. Apply Transition can therefore consume either a selected mixed-topology face disk or a closed selected edge loop around one. The boundary must still form four sides with compatible opposite segment counts. For a mixed interior, the four strongest geometric turns identify the physical corners; a regular all-quad grid continues to use its exact combinatorial corners.
+
+## Single-quad insertion
+
+A selected quad has only four outside edges, while a real 5 -> 3, 3 -> 1, 4 -> 2, or 1 -> 2 transition needs a longer boundary loop to express its incoming and outgoing counts. Directly binding those templates to a single quad would either split neighboring faces or create invalid non-quad topology.
+
+For that case, Apply Transition wraps the real preset in a connected all-quad local frame:
+
+1. the selected quad's four outside vertices and edges stay fixed;
+2. a guard loop and a smaller transition loop are added inside the quad;
+3. the actual preset topology is placed in the center; and
+4. the guard and preset boundary are locked during relaxation so the adapter does not collapse.
+
+This makes "turn any quad into this transition" practical and transactional. The tradeoff is visible density: the local frame adds adapter extraordinary vertices in addition to the transition's own N-poles. Larger four-sided patch selections remain the cleaner choice when the surrounding edge flow can participate in the transition boundary.
+
+Before the BMesh is changed, the operator now checks that every shared internal edge is used in opposite loop directions and that the fitted projected edges do not cross. If the chosen pole controls or selection shape would fold the template over itself, the operation cancels before mutating the mesh.
