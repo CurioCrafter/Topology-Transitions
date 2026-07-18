@@ -40,42 +40,6 @@ class QT_PT_sidebar(Panel):
         layout = self.layout
         settings = context.scene.topology_transitions
 
-        draw = layout.box()
-        draw.label(text="Draw Connected Retopology")
-        draw.label(text="1. Select one open bottom boundary chain", icon="EDGESEL")
-        draw.label(text="Each selected edge becomes one connected lane")
-        draw.prop(settings, "surface_target")
-        draw.prop(settings, "draw_layout", text="")
-        if settings.draw_layout == "TRANSITION":
-            draw.prop(settings, "transition")
-            row = draw.row(align=True)
-            row.prop(settings, "pole_side", text="Pole")
-            row.prop(settings, "mirror")
-            draw.prop(settings, "pole_spacing")
-        row = draw.row(align=True)
-        row.prop(settings, "draw_segments")
-        row.prop(settings, "draw_width_scale")
-        draw.prop(settings, "draw_flip_width")
-        draw.prop(settings, "draw_project_limit")
-        operator = draw.operator(
-            "mesh.quad_transition_draw_multi_strip",
-            text="Draw Connected Multi-Strip",
-            icon="GREASEPENCIL",
-        )
-        operator.layout = settings.draw_layout
-        operator.transition = settings.transition
-        operator.segments = settings.draw_segments
-        operator.width_scale = settings.draw_width_scale
-        operator.flip_width = settings.draw_flip_width
-        operator.pole_side = settings.pole_side
-        operator.mirror = settings.mirror
-        operator.pole_spacing = settings.pole_spacing
-        operator.target_name = (
-            settings.surface_target.name if settings.surface_target else ""
-        )
-        operator.project_limit = settings.draw_project_limit
-        draw.label(text="LMB draw; wheel rows; Shift+wheel width", icon="INFO")
-
         surface = layout.box()
         surface.label(text="Surface Conform & Bake Preview")
         surface.prop(settings, "shrinkwrap_method", text="")
@@ -221,7 +185,7 @@ class QT_PT_sidebar(Panel):
 
         selection = layout.box()
         selection.label(text="1. Select one quad, a patch, or its boundary")
-        selection.label(text="One quad gets a connected local transition stamp")
+        selection.label(text="One quad places only the transition core")
         selection.label(text="Larger patches use the true four-sided boundary")
         selection.label(text="Make an incoming boundary edge active if needed")
 
@@ -311,8 +275,49 @@ class QT_PT_sidebar(Panel):
             )
             metrics.label(text=f"{settings.flow_neighbor_count} adjacent flows")
 
+        draw_shell = layout.box()
+        draw_shell.label(text="Experimental Connected Drawing")
+        draw_shell.prop(settings, "show_drawing_tools")
+        if not settings.show_drawing_tools:
+            draw_shell.label(text="Hidden by default; optional boundary helper")
+        else:
+            draw = draw_shell.column(align=True)
+            draw.label(text="Select one open bottom boundary chain", icon="EDGESEL")
+            draw.label(text="Optional helper; not the main transition workflow")
+            draw.prop(settings, "surface_target")
+            draw.prop(settings, "draw_layout", text="")
+            if settings.draw_layout == "TRANSITION":
+                draw.prop(settings, "transition")
+                row = draw.row(align=True)
+                row.prop(settings, "pole_side", text="Pole")
+                row.prop(settings, "mirror")
+                draw.prop(settings, "pole_spacing")
+            row = draw.row(align=True)
+            row.prop(settings, "draw_segments")
+            row.prop(settings, "draw_width_scale")
+            draw.prop(settings, "draw_flip_width")
+            draw.prop(settings, "draw_project_limit")
+            operator = draw.operator(
+                "mesh.quad_transition_draw_multi_strip",
+                text="Draw Connected Sheet",
+                icon="GREASEPENCIL",
+            )
+            operator.layout = settings.draw_layout
+            operator.transition = settings.transition
+            operator.segments = settings.draw_segments
+            operator.width_scale = settings.draw_width_scale
+            operator.flip_width = settings.draw_flip_width
+            operator.pole_side = settings.pole_side
+            operator.mirror = settings.mirror
+            operator.pole_spacing = settings.pole_spacing
+            operator.target_name = (
+                settings.surface_target.name if settings.surface_target else ""
+            )
+            operator.project_limit = settings.draw_project_limit
+            draw.label(text="LMB draw; wheel rows; Shift+wheel width", icon="INFO")
+
         note = layout.column(align=True)
-        note.label(text="One-quad stamps keep neighbor edges pinned.")
+        note.label(text="One-quad core placement leaves a remesh gap.")
         note.label(text="Larger patch boundary vertices are pinned.")
         note.label(text="Transition output remains all-quad.")
 

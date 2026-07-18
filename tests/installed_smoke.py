@@ -9,6 +9,10 @@ import bmesh
 import bpy
 from mathutils import Vector
 
+TRANSITION_ROLE_LAYER = "topology_transition_role"
+TRANSITION_ROLE_ADAPTER = 1
+TRANSITION_ROLE_CORE = 2
+
 
 def create_patch():
     bpy.ops.object.select_all(action="SELECT")
@@ -155,7 +159,7 @@ def main() -> None:
         )
     if not hasattr(bpy.types.Scene, "topology_transitions"):
         raise AssertionError("Installed add-on did not register scene settings")
-    if topology_transitions.bl_info["version"] != (0, 6, 1):
+    if topology_transitions.bl_info["version"] != (0, 6, 2):
         raise AssertionError(
             f"Installed add-on reported {topology_transitions.bl_info['version']}"
         )
@@ -183,10 +187,22 @@ def main() -> None:
     )
     single_bm = bmesh.from_edit_mesh(single.data)
     single_selected = [face for face in single_bm.faces if face.select]
+    role_layer = single_bm.faces.layers.int.get(TRANSITION_ROLE_LAYER)
+    single_inserted = [
+        face
+        for face in single_bm.faces
+        if role_layer is not None
+        and face[role_layer] in {TRANSITION_ROLE_ADAPTER, TRANSITION_ROLE_CORE}
+    ]
     if (
         single_result != {"FINISHED"}
-        or len(single_selected) != 31
+        or len(single_inserted) != 11
+        or len(single_selected) != 11
         or any(len(face.verts) != 4 for face in single_bm.faces)
+        or any(
+            role_layer is None or face[role_layer] != TRANSITION_ROLE_CORE
+            for face in single_selected
+        )
     ):
         raise AssertionError(
             f"Installed single-quad insertion failed: {single_result}"
@@ -284,7 +300,8 @@ def main() -> None:
     print(
         f"QT_INSTALLED_SMOKE_PASS module={loaded} "
         f"selected_quads={len(selected)} flows={flow_count} "
-        f"flow_quads={strip_quads} single_quad={len(single_selected)} "
+        f"flow_quads={strip_quads} single_quad={len(single_inserted)} "
+        f"single_core={len(single_selected)} "
         f"example_quads=186 transitions=8 repairs=1 open_edges=4 "
         f"ribbon_quads=6 shrinkwrap=1 bake_cage=1"
     )

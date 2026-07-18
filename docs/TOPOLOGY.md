@@ -83,13 +83,14 @@ The transition template depends on the outside boundary, not on the face types b
 
 A selected quad has only four outside edges, while a real 5 -> 3, 3 -> 1, 4 -> 2, or 1 -> 2 transition needs a longer boundary loop to express its incoming and outgoing counts. Directly binding those templates to a single quad would either split neighboring faces or create invalid non-quad topology.
 
-For that case, Apply Transition wraps the real preset in a connected all-quad local frame:
+For that case, Apply Transition places the real preset as an inset core:
 
-1. the selected quad's four outside vertices and edges stay fixed;
-2. a guard loop and a smaller transition loop are added inside the quad;
-3. the actual preset topology is placed in the center; and
-4. the guard and preset boundary are locked during relaxation so the adapter does not collapse.
+1. the selected quad face is removed;
+2. the actual preset topology is placed in the center; and
+3. the surrounding gap is left for the user or a later remesh/retopology pass.
 
-This makes "turn any quad into this transition" practical and transactional. The tradeoff is visible density: the local frame adds adapter extraordinary vertices in addition to the transition's own N-poles. Larger four-sided patch selections remain the cleaner choice when the surrounding edge flow can participate in the transition boundary.
+This makes "turn any quad into this transition" act as a template placement tool instead of an automatic boundary-compatible fill. Larger four-sided patch selections remain the cleaner choice when the surrounding edge flow can participate in the transition boundary and a connected all-quad patch is required.
+
+Because downstream retopology/remesh decisions usually care about the actual density-change pattern, generated faces are role-marked. The integer face layer `topology_transition_role` uses `2` for the transition core. One-quad Apply Transition leaves the core faces selected after the operation.
 
 Before the BMesh is changed, the operator now checks that every shared internal edge is used in opposite loop directions and that the fitted projected edges do not cross. If the chosen pole controls or selection shape would fold the template over itself, the operation cancels before mutating the mesh.

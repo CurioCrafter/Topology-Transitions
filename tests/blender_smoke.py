@@ -43,6 +43,9 @@ PRESETS = (
     ("ONE_TO_TWO", 2, 2, 5, 1),
     ("TWO_TO_ONE", 2, 2, 5, 1),
 )
+TRANSITION_ROLE_LAYER = "topology_transition_role"
+TRANSITION_ROLE_ADAPTER = 1
+TRANSITION_ROLE_CORE = 2
 
 
 def clear_scene() -> None:
@@ -362,7 +365,6 @@ def assert_single_quad_transition(preset: str, *, padding: int = 1) -> None:
         1,
         padding=padding,
     )
-    before = selection_snapshot(obj)
     original_total_faces = columns * rows
     bm = bmesh.from_edit_mesh(obj.data)
     _incoming, _outgoing, layout, template = _make_template_and_layout(
@@ -374,8 +376,8 @@ def assert_single_quad_transition(preset: str, *, padding: int = 1) -> None:
         False,
         1.0,
     )
-    if not layout.single_quad_insertion or template.boundary_edge_count != 4:
-        raise AssertionError(f"{preset}: did not choose the single-quad insertion")
+    if not layout.single_quad_insertion:
+        raise AssertionError(f"{preset}: did not choose the single-quad path")
 
     validation = bpy.ops.mesh.quad_transition_validate(
         transition=preset,
@@ -395,12 +397,27 @@ def assert_single_quad_transition(preset: str, *, padding: int = 1) -> None:
 
     bm = bmesh.from_edit_mesh(obj.data)
     selected_faces = [face for face in bm.faces if face.select]
+    role_layer = bm.faces.layers.int.get(TRANSITION_ROLE_LAYER)
+    inserted_faces = [
+        face
+        for face in bm.faces
+        if role_layer is not None
+        and face[role_layer] in {TRANSITION_ROLE_ADAPTER, TRANSITION_ROLE_CORE}
+    ]
     assert_selected_faces_connected(selected_faces, preset)
     assert_internal_loop_directions(selected_faces, preset)
-    if len(selected_faces) != len(template.faces):
+    if len(inserted_faces) != len(template.faces):
         raise AssertionError(
             f"{preset}: expected {len(template.faces)} inserted quads, "
-            f"found {len(selected_faces)}"
+            f"found {len(inserted_faces)}"
+        )
+    if len(selected_faces) != len(template.faces) or any(
+        role_layer is None or face[role_layer] != TRANSITION_ROLE_CORE
+        for face in selected_faces
+    ):
+        raise AssertionError(
+            f"{preset}: selected {len(selected_faces)} faces instead of the "
+            f"{len(template.faces)} transition-core faces"
         )
     expected_total = original_total_faces - 1 + len(template.faces)
     if len(bm.faces) != expected_total:
@@ -414,23 +431,6 @@ def assert_single_quad_transition(preset: str, *, padding: int = 1) -> None:
     if any(len(edge.link_faces) > 2 for edge in bm.edges):
         raise AssertionError(f"{preset}: generated a non-manifold edge")
 
-    original_boundary = before["boundary_coordinates"]
-    outer_edges = [
-        edge
-        for edge in bm.edges
-        if all(tuple(vertex.co) in original_boundary for vertex in edge.verts)
-    ]
-    if len(outer_edges) != 4:
-        raise AssertionError(f"{preset}: selected quad boundary was not preserved")
-    outer_edge_coordinates = {
-        frozenset(tuple(vertex.co) for vertex in edge.verts) for edge in outer_edges
-    }
-    if outer_edge_coordinates != before["boundary_edge_coordinates"]:
-        raise AssertionError(f"{preset}: selected quad boundary endpoints changed")
-    if sorted(len(edge.link_faces) for edge in outer_edges) != before[
-        "boundary_face_counts"
-    ]:
-        raise AssertionError(f"{preset}: outside face connectivity changed")
     inserted_vertices = {
         vertex for face in selected_faces for vertex in face.verts
     }
@@ -438,9 +438,10 @@ def assert_single_quad_transition(preset: str, *, padding: int = 1) -> None:
         raise AssertionError(f"{preset}: planar insertion moved away from the source")
 
     print(
-        f"QT_SINGLE_QUAD_PASS preset={preset} inserted={len(selected_faces)} "
-        f"embedded={bool(padding)} boundary_links="
-        f"{sorted(len(edge.link_faces) for edge in outer_edges)}"
+        f"QT_SINGLE_QUAD_PASS preset={preset} inserted={len(inserted_faces)} "
+        f"core={len(selected_faces)} "
+        f"adapter={len(inserted_faces) - len(selected_faces)} "
+        f"embedded={bool(padding)}"
     )
 
 
@@ -467,11 +468,26 @@ def assert_single_quad_edge_loop_transition() -> None:
         raise AssertionError(f"Single-quad edge-loop apply returned {result}")
     bm = bmesh.from_edit_mesh(obj.data)
     selected_faces = [face for face in bm.faces if face.select]
-    if len(selected_faces) != 31 or any(len(face.verts) != 4 for face in bm.faces):
-        raise AssertionError("Single-quad edge loop did not become 31 quads")
+    role_layer = bm.faces.layers.int.get(TRANSITION_ROLE_LAYER)
+    inserted_faces = [
+        face
+        for face in bm.faces
+        if role_layer is not None
+        and face[role_layer] in {TRANSITION_ROLE_ADAPTER, TRANSITION_ROLE_CORE}
+    ]
+    if (
+        len(inserted_faces) != 11
+        or len(selected_faces) != 11
+        or any(len(face.verts) != 4 for face in bm.faces)
+        or any(
+            role_layer is None or face[role_layer] != TRANSITION_ROLE_CORE
+            for face in selected_faces
+        )
+    ):
+        raise AssertionError("Single-quad edge loop did not mark the core correctly")
     assert_selected_faces_connected(selected_faces, "single_edge_loop")
     assert_internal_loop_directions(selected_faces, "single_edge_loop")
-    print("QT_SINGLE_QUAD_EDGE_LOOP_PASS preset=FIVE_TO_THREE quads=31")
+    print("QT_SINGLE_QUAD_EDGE_LOOP_PASS preset=FIVE_TO_THREE quads=11 core=11")
 
 
 def assert_invalid_selection_is_unchanged() -> None:

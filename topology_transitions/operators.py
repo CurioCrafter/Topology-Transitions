@@ -22,7 +22,6 @@ from mathutils.bvhtree import BVHTree
 from .core import (
     TransitionError,
     build_transition_template,
-    frame_transition_for_single_quad,
     preset_counts,
     template_adjacency,
     transition_items,
@@ -32,6 +31,10 @@ from .mesh_ops import analyze_selected_patch, analyze_single_quad, bind_boundary
 
 PREVIEW_MODIFIER_NAME = "Topology Transition Preview"
 GEOMETRY_EPSILON = 1.0e-8
+TRANSITION_ROLE_LAYER = "topology_transition_role"
+TRANSITION_ROLE_ADAPTER = 1
+TRANSITION_ROLE_CORE = 2
+SINGLE_QUAD_CORE_MARGIN = 0.18
 
 
 AXIS_ITEMS = (
@@ -258,7 +261,7 @@ def _make_template_and_layout(
         flip_flow=flip_flow,
     )
     if layout is not None:
-        inner = build_transition_template(
+        template = build_transition_template(
             input_count,
             output_count,
             1 + shoulder_left,
@@ -267,7 +270,6 @@ def _make_template_and_layout(
             mirror=core_mirror,
             pole_spacing=pole_spacing,
         )
-        template = frame_transition_for_single_quad(inner)
     else:
         layout = analyze_selected_patch(
             bm,
@@ -322,6 +324,9 @@ def apply_transition(
 
     mesh = obj.data
     bm = bmesh.from_edit_mesh(mesh)
+    role_layer = bm.faces.layers.int.get(TRANSITION_ROLE_LAYER)
+    if role_layer is None:
+        role_layer = bm.faces.layers.int.new(TRANSITION_ROLE_LAYER)
     bm.normal_update()
     input_count, output_count, layout, template = _make_template_and_layout(
         bm,
@@ -332,7 +337,7 @@ def apply_transition(
         mirror,
         pole_spacing,
     )
-    binding = bind_boundary(template, layout)
+    binding = {} if layout.single_quad_insertion else bind_boundary(template, layout)
 
     boundary_coordinates = {
         vertex: vertex.co.copy() for vertex in layout.boundary_vertices
@@ -357,11 +362,18 @@ def apply_transition(
         key: vertex.co.copy() for key, vertex in binding.items()
     }
     anchors: dict[str, Vector] = {}
-    for key in template.interior_keys:
+    created_key_set = (
+        set(template.vertices)
+        if layout.single_quad_insertion
+        else template.interior_keys
+    )
+    margin = SINGLE_QUAD_CORE_MARGIN if layout.single_quad_insertion else 0.0
+    scale = 1.0 - (2.0 * margin)
+    for key in created_key_set:
         spec = template.vertices[key]
         coordinate = _bilinear(
-            spec.u,
-            spec.v,
+            margin + (scale * spec.u),
+            margin + (scale * spec.v),
             top_left,
             top_right,
             bottom_left,
@@ -387,7 +399,7 @@ def apply_transition(
         coordinates.update(next_coordinates)
 
     if conform_surface:
-        for key in template.interior_keys:
+        for key in created_key_set:
             coordinates[key] = project(coordinates[key])
 
     oriented_faces: list[tuple[str, str, str, str]] = []
@@ -407,20 +419,28 @@ def apply_transition(
     backup = bm.copy()
     created_vertices: list[Any] = []
     created_faces: list[Any] = []
+    selected_created_faces: list[Any] = []
     vertex_map = dict(binding)
     try:
-        for key in template.interior_keys:
+        for key in created_key_set:
             vertex = bm.verts.new(coordinates[key])
             vertex_map[key] = vertex
             created_vertices.append(vertex)
         bm.verts.index_update()
         bm.verts.ensure_lookup_table()
 
-        for face_keys in oriented_faces:
+        for face_index, face_keys in enumerate(oriented_faces):
             face = bm.faces.new([vertex_map[key] for key in face_keys])
             face.material_index = material_index
             face.smooth = smooth
+            face[role_layer] = (
+                TRANSITION_ROLE_CORE
+                if face_index in template.transition_face_indices
+                else TRANSITION_ROLE_ADAPTER
+            )
             created_faces.append(face)
+            if face_index in template.transition_face_indices:
+                selected_created_faces.append(face)
 
         bmesh.ops.delete(bm, geom=layout.selected_faces, context="FACES_ONLY")
         dead_edges = [
@@ -439,12 +459,12 @@ def apply_transition(
             bmesh.ops.delete(bm, geom=dead_vertices, context="VERTS")
 
         bm.normal_update()
-        if any(
+        if not layout.single_quad_insertion and any(
             not vertex.is_valid or (vertex.co - coordinate).length > 1.0e-8
             for vertex, coordinate in boundary_coordinates.items()
         ):
             raise TransitionError("Boundary preservation check failed")
-        if any(
+        if not layout.single_quad_insertion and any(
             not edge.is_valid or len(edge.link_faces) != count
             for edge, count in boundary_face_counts.items()
         ):
@@ -464,7 +484,7 @@ def apply_transition(
 
         for face in bm.faces:
             face.select_set(False)
-        for face in created_faces:
+        for face in selected_created_faces:
             face.select_set(True)
         bm.select_flush_mode()
         bmesh.update_edit_mesh(mesh, loop_triangles=True, destructive=True)
@@ -479,6 +499,8 @@ def apply_transition(
         "output_count": output_count,
         "old_faces": len(layout.selected_faces),
         "new_faces": len(created_faces),
+        "transition_faces": len(selected_created_faces),
+        "adapter_faces": len(created_faces) - len(selected_created_faces),
         "new_vertices": len(created_vertices),
         "poles": len(template.pole_keys),
         "width": layout.width,
@@ -549,14 +571,16 @@ class QT_OT_apply_transition(Operator):
             return {"CANCELLED"}
 
         placement = (
-            "inserted inside one quad"
+            "placed the transition core inside one quad"
             if stats["single_quad_insertion"]
             else "patch boundary preserved"
         )
         self.report(
             {"INFO"},
             f"{stats['input_count']} to {stats['output_count']}: "
-            f"{stats['new_faces']} quads, {stats['poles']} transition N-poles; "
+            f"{stats['new_faces']} quads "
+            f"({stats['transition_faces']} core, {stats['adapter_faces']} adapter), "
+            f"{stats['poles']} transition N-poles; "
             f"{placement}",
         )
         if stats["had_uvs"]:
@@ -599,7 +623,8 @@ class QT_OT_validate_patch(Operator):
                 self.mirror,
                 self.pole_spacing,
             )
-            bind_boundary(template, layout)
+            if not layout.single_quad_insertion:
+                bind_boundary(template, layout)
         except TransitionError as exc:
             self.report({"ERROR"}, str(exc))
             return {"CANCELLED"}

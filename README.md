@@ -1,9 +1,9 @@
 # Topology Transitions
 
 Topology Transitions is a Blender add-on for building guided all-quad loop
-reductions/expansions, drawing several welded quad lanes over a source surface,
-repairing selected triangles and n-gons, reading broad quad-flow regions, and
-preparing shrinkwrapped retopology for selected-to-active baking.
+reductions/expansions, repairing selected triangles and n-gons, reading broad
+quad-flow regions, preparing shrinkwrapped retopology for selected-to-active
+baking, and optionally drawing welded boundary-grown quad sheets.
 
 Supported transition directions are 5 -> 3, 3 -> 5, 3 -> 1, 1 -> 3,
 4 -> 2, 2 -> 4, 1 -> 2, and 2 -> 1. Pole placement, mirroring, surface
@@ -18,10 +18,12 @@ conformity, relaxation, and Catmull-Clark preview remain user-controlled.
 3. Open the top-right menu, choose **Install from Disk**, and select the ZIP.
 4. Open **3D View -> Sidebar -> Quad Transition**.
 
-## Draw a connected multi-strip
+## Experimental connected drawing
 
-This is a boundary-driven alternative to drawing several independent quad
-strips:
+This optional helper is hidden by default behind **Show Connected Drawing** in
+the sidebar. It is a boundary-driven way to grow several welded quad lanes when
+you specifically need a selected bottom edge chain to continue as one connected
+sheet:
 
 1. Keep the high-poly source as a separate visible mesh and choose it as
    **Surface Target**.
@@ -29,7 +31,7 @@ strips:
    selected edge is one lane.
 3. Choose **Connected Multi-Strip** for a uniform sheet or **Transition Ribbon**
    for one of the eight real density patterns.
-4. Click **Draw Connected Multi-Strip**, drag LMB over the target, adjust rows
+4. Click **Draw Connected Sheet**, drag LMB over the target, adjust rows
    with the wheel and width with Shift+wheel, then press Enter.
 
 The selected chain is reused as the exact first row, so the new faces weld to
@@ -64,7 +66,7 @@ For selected-to-active baking:
 ![Orange exact-topology cage with green source hits and red misses](docs/images/07-bake-ray-preview.png)
 
 The full workflow and implementation boundaries are documented in
-[Connected Multi-Strip, Surface Conformity, and Baking](docs/CONNECTED_MULTI_STRIP_AND_BAKING.md).
+[Experimental Connected Drawing, Surface Conformity, and Baking](docs/CONNECTED_MULTI_STRIP_AND_BAKING.md).
 
 ## Apply a transition
 
@@ -79,8 +81,10 @@ Choose the transition and run **Validate**, then **Apply Transition**. The
 outside boundary is pinned while the interior is replaced with the selected
 all-quad template. A 5 -> 3 true patch replacement needs five incoming face
 columns. A one-quad insertion preserves the selected quad's four outside edges
-and adds a connected all-quad adapter around the real transition, so neighboring
-faces do not have to be rebuilt.
+and places only the true transition core inside that space. This intentionally
+leaves the surrounding area open for remesh/retopology work instead of adding a
+local adapter frame. Generated faces receive a `topology_transition_role`
+integer face layer: `2` means transition core.
 
 ![Selected five-column patch](docs/images/01-select-patch.png)
 
@@ -196,9 +200,9 @@ that every boundary is a mistake.
 - Apply Transition accepts one selected quad, a compatible four-sided region, or
   that region's closed boundary loop. It does not decide artistic pole
   placement for an entire character.
-- A one-quad insertion is intentionally a local adapter: it keeps the four
-  neighboring edges unchanged, but adds extra adapter poles around the real
-  transition pattern.
+- A one-quad insertion is intentionally a core-only placement. It removes the
+  selected quad face and places the real transition pattern inset inside that
+  area; it does not build the surrounding quad frame for you.
 - Every accepted transition validates an all-quad connected disk, manifold edge
   counts, expected pole valence, nonzero face area, preserved boundary
   coordinates, preserved outside connectivity, and fitted-face fold checks.

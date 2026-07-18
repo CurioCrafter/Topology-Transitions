@@ -248,7 +248,7 @@ def setup_single_quad_transition() -> None:
     clear_scene()
     create_text("ONE QUAD  ->  REAL 5 TO 3 INSERTION", (0.0, 2.15, 0.04), 0.3)
     create_text(
-        "CONNECTED ALL-QUAD FRAME  /  NEIGHBORS UNCHANGED",
+        "CORE ONLY  /  SURROUNDING GAP READY TO REMESH",
         (0.0, -2.15, 0.04),
         0.2,
     )

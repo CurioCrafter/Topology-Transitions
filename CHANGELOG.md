@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.2 - 2026-07-17
+
+- Changed one-quad Apply Transition to place only the true minimum transition
+  core inside the selected quad instead of generating the surrounding local
+  adapter frame.
+- Moved connected drawing out of the top-level sidebar flow and behind a
+  default-off **Show Connected Drawing** experimental section.
+- Removed named third-party comparison/callout documentation from the current
+  docs; repository search found no copied third-party source or asset files.
+- Marked generated transition faces with a durable `topology_transition_role`
+  integer face layer: `2` is the actual transition core.
+- Added source and packaged installed-copy smoke checks that prove the local
+  five-to-three single-quad placement is the 11-face transition pattern.
+
 ## 0.6.1 - 2026-07-17
 
 - Made **Apply Transition** accept one selected quad by inserting a connected

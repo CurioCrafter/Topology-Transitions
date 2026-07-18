@@ -1,9 +1,14 @@
-# Connected Multi-Strip, Surface Conformity, and Baking
+# Experimental Connected Drawing, Surface Conformity, and Baking
 
-This workflow grows several quad lanes as one mesh. It is boundary-driven: the
-selected open edge chain is the bottom row, every selected edge becomes one
-lane, and those exact existing vertices are reused. No duplicate seam is placed
-on top of the bottom quads.
+This optional workflow grows several quad lanes as one mesh. It is
+boundary-driven: the selected open edge chain is the bottom row, every selected
+edge becomes one lane, and those exact existing vertices are reused. No
+duplicate seam is placed on top of the bottom quads.
+
+The connected drawing controls are hidden by default in the sidebar because the
+core add-on workflow is transition placement, topology repair, and quad-flow
+inspection. Enable **Show Connected Drawing** only when you specifically want
+this experimental boundary-growth helper.
 
 ## Draw a connected quad sheet
 
@@ -13,7 +18,7 @@ on top of the bottom quads.
    must currently have exactly one linked face.
 4. Set **Surface Target** and choose either **Connected Multi-Strip** or
    **Transition Ribbon**.
-5. Click **Draw Connected Multi-Strip**, then drag LMB over the target.
+5. Click **Draw Connected Sheet**, then drag LMB over the target.
 6. Use the wheel to change longitudinal rows and Shift+wheel to change width.
    Enter commits; Esc or right-click cancels without changing the mesh.
 
@@ -109,7 +114,7 @@ cage and Max Ray Distance are mutually exclusive. The button deliberately does
 not call Blender's bake operator, so it cannot overwrite an image merely by
 inspecting or preparing the workflow.
 
-## Research-backed next improvements
+## Next improvements
 
 The next high-value steps are deliberately separate from what is implemented:
 

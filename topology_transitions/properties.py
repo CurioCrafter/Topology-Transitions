@@ -21,6 +21,14 @@ def _mesh_object_poll(_self, obj: Object) -> bool:
 
 
 class QT_PG_settings(PropertyGroup):
+    show_drawing_tools: BoolProperty(
+        name="Show Connected Drawing",
+        description=(
+            "Show the optional experimental boundary-drawing controls. "
+            "The main workflow is transition placement, repair, and quad-flow reading"
+        ),
+        default=False,
+    )
     draw_layout: EnumProperty(
         name="Ribbon Layout",
         description="Grow a uniform connected sheet or draw a density transition",
