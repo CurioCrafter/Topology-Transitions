@@ -1170,6 +1170,79 @@ def assert_connected_ribbon_growth() -> None:
     )
 
 
+def _world_normal_faces_axis(obj, polygon, axis: Vector) -> bool:
+    normal_matrix = obj.matrix_world.to_3x3().inverted_safe().transposed()
+    normal = normal_matrix @ polygon.normal
+    if normal.length_squared <= 1.0e-16:
+        return False
+    normal.normalize()
+    dot = normal.dot(axis)
+    if dot <= 1.0e-6:
+        return False
+    component = max(range(3), key=lambda index: abs(axis[index]))
+    return abs(normal[component]) + 1.0e-6 >= max(
+        abs(normal.x), abs(normal.y), abs(normal.z)
+    )
+
+
+def assert_directional_face_delete() -> None:
+    axes = {
+        "POS_X": Vector((1.0, 0.0, 0.0)),
+        "NEG_X": Vector((-1.0, 0.0, 0.0)),
+        "POS_Y": Vector((0.0, 1.0, 0.0)),
+        "NEG_Y": Vector((0.0, -1.0, 0.0)),
+        "POS_Z": Vector((0.0, 0.0, 1.0)),
+        "NEG_Z": Vector((0.0, 0.0, -1.0)),
+    }
+    for axis, vector in axes.items():
+        clear_scene()
+        bpy.ops.mesh.primitive_cube_add(size=2.0)
+        obj = bpy.context.object
+        if obj is None:
+            raise AssertionError("Cube was not created for directional delete")
+        result = bpy.ops.object.quad_transition_delete_faces_by_axis(axis=axis)
+        if result != {"FINISHED"} or len(obj.data.polygons) != 5:
+            raise AssertionError(
+                f"Directional delete {axis} failed: {result}, "
+                f"{len(obj.data.polygons)} faces"
+            )
+        if any(
+            _world_normal_faces_axis(obj, polygon, vector)
+            for polygon in obj.data.polygons
+        ):
+            raise AssertionError(f"Directional delete left a {axis} face behind")
+
+    clear_scene()
+    mesh = bpy.data.meshes.new("linked_direction_delete_mesh")
+    mesh.from_pydata(
+        (
+            (-1.0, -1.0, 0.0),
+            (1.0, -1.0, 0.0),
+            (1.0, 1.0, 0.0),
+            (-1.0, 1.0, 0.0),
+        ),
+        (),
+        ((0, 1, 2, 3),),
+    )
+    mesh.update()
+    selected = bpy.data.objects.new("linked_direction_delete_selected", mesh)
+    duplicate = bpy.data.objects.new("linked_direction_delete_duplicate", mesh)
+    bpy.context.collection.objects.link(selected)
+    bpy.context.collection.objects.link(duplicate)
+    bpy.context.view_layer.objects.active = selected
+    selected.select_set(True)
+    duplicate.select_set(False)
+    result = bpy.ops.object.quad_transition_delete_faces_by_axis(axis="POS_Z")
+    if (
+        result != {"FINISHED"}
+        or selected.data is duplicate.data
+        or len(selected.data.polygons) != 0
+        or len(duplicate.data.polygons) != 1
+    ):
+        raise AssertionError("Directional delete did not protect linked mesh data")
+    print("QT_DIRECTIONAL_DELETE_PASS axes=6 linked_single_user=1")
+
+
 def main() -> None:
     topology_transitions.register()
     try:
@@ -1190,6 +1263,7 @@ def main() -> None:
         assert_repair_operators()
         assert_mixed_and_edge_boundary_transition_inputs()
         assert_manifold_diagnostics()
+        assert_directional_face_delete()
         assert_connected_ribbon_growth()
         assert_subdivision_preview()
         assert_external_projection_target()
@@ -1198,7 +1272,8 @@ def main() -> None:
         print(
             "QT_BLENDER_SMOKE_PASS patterns=13 single_quad=10 rejection_cases=2 "
             "preview=1 external_projection=1 quad_flow=3 example_atlas=1 "
-            "repair=6 boundary_input=2 manifold=3 connected_ribbon=2"
+            "repair=6 boundary_input=2 manifold=3 directional_delete=7 "
+            "connected_ribbon=2"
         )
     finally:
         clear_scene()

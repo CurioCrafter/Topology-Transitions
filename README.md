@@ -173,6 +173,20 @@ manifold mesh reports zero issues. An intentional open retopology sheet is still
 reported accurately as an open boundary; the tool diagnoses rather than assumes
 that every boundary is a mistake.
 
+## Directional Face Delete
+
+In Object Mode, select one or more mesh objects and use **Directional Face
+Delete** to remove faces by world-axis direction:
+
+- **+X** / **-X**
+- **+Y** / **-Y**
+- **+Z** / **-Z**
+
+The operator deletes faces whose world-space normal points mostly toward the
+chosen direction. If a selected object shares mesh data with another object, the
+selected object is made single-user first so unselected duplicates are not
+silently changed.
+
 ## Main controls
 
 | Control | Effect |
@@ -192,6 +206,7 @@ that every boundary is a mistake.
 | Scope | Uses all visible faces or only selected faces. |
 | Show Full Map | Colors all broad regions while one remains active. |
 | Focus View | Frames the active region/band after each step. |
+| Directional Face Delete | Removes selected-object faces by dominant world-axis normal. |
 | Shrinkwrap Method / Offset | Maintains non-destructive source conformity while editing. |
 | Bake Cage / Ray Preview | Visualizes the envelope and sampled source reach before baking. |
 
@@ -208,6 +223,9 @@ that every boundary is a mistake.
   coordinates, preserved outside connectivity, and fitted-face fold checks.
 - Repair propagation can add full edge paths across a large quad mesh. The
   operator reports how many splits and surrounding quads it changed.
+- Directional Face Delete works from Object Mode and uses world-space dominant
+  normals, so rotated objects are judged by how their faces point in the scene,
+  not by their local mesh axes.
 - Surface projection can choose the wrong sheet on tightly overlapping meshes;
   use an explicit projection target or disable conformity.
 - The bake-ray overlay is a sampled diagnostic, not a replacement for the final
@@ -236,6 +254,7 @@ Key modules:
 - `core.py`: pure transition templates and graph validation;
 - `mesh_ops.py` / `operators.py`: selection analysis and transactional apply;
 - `quad_repair.py` / `repair_ops.py`: local and propagated all-quad repair;
+- `direction_delete_ops.py`: selected-object face removal by world-axis normal;
 - `quad_flows.py` / `flow_ops.py`: pole-bounded regions, face bands, and overlay;
 - `manifold.py` / `manifold_ops.py`: pure diagnostics and Blender selection;
 - `ribbon.py` / `ribbon_ops.py`: connected multi-lane plans, surface fitting,

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.3 - 2026-08-04
+
+- Added **Directional Face Delete** Object Mode buttons for +X, -X, +Y, -Y,
+  +Z, and -Z. Each button removes faces on selected mesh objects whose
+  world-space normals point mostly toward that direction.
+- Preserved linked mesh safety by making selected linked mesh data single-user
+  before deleting faces, so an unselected duplicate is not changed by surprise.
+
 ## 0.6.2 - 2026-07-17
 
 - Changed one-quad Apply Transition to place only the true minimum transition

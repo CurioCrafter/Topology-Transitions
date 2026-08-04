@@ -159,7 +159,7 @@ def main() -> None:
         )
     if not hasattr(bpy.types.Scene, "topology_transitions"):
         raise AssertionError("Installed add-on did not register scene settings")
-    if topology_transitions.bl_info["version"] != (0, 6, 2):
+    if topology_transitions.bl_info["version"] != (0, 6, 3):
         raise AssertionError(
             f"Installed add-on reported {topology_transitions.bl_info['version']}"
         )
@@ -255,6 +255,20 @@ def main() -> None:
     if manifold_result != {"FINISHED"} or settings.manifold_open_edge_count != 4:
         raise AssertionError("Installed manifold diagnostic missed quad boundary")
 
+    bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.ops.object.select_all(action="SELECT")
+    bpy.ops.object.delete(use_global=False)
+    bpy.ops.mesh.primitive_cube_add(size=2.0)
+    cube = bpy.context.object
+    delete_result = bpy.ops.object.quad_transition_delete_faces_by_axis(axis="POS_Y")
+    if (
+        delete_result != {"FINISHED"}
+        or cube is None
+        or len(cube.data.polygons) != 5
+        or any(polygon.normal.y > 0.9 for polygon in cube.data.polygons)
+    ):
+        raise AssertionError(f"Installed directional delete failed: {delete_result}")
+
     low, target = create_connected_ribbon_fixture()
     ribbon_stats = grow_ribbon_from_stroke(
         bpy.context,
@@ -303,7 +317,7 @@ def main() -> None:
         f"flow_quads={strip_quads} single_quad={len(single_inserted)} "
         f"single_core={len(single_selected)} "
         f"example_quads=186 transitions=8 repairs=1 open_edges=4 "
-        f"ribbon_quads=6 shrinkwrap=1 bake_cage=1"
+        f"directional_delete=1 ribbon_quads=6 shrinkwrap=1 bake_cage=1"
     )
 
 

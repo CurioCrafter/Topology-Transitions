@@ -183,6 +183,30 @@ class QT_PT_sidebar(Panel):
             )
             integrity.label(text=settings.manifold_current_kind)
 
+        directional = layout.box()
+        directional.label(text="Directional Face Delete")
+        directional.label(text="Object Mode: selected mesh objects")
+        row = directional.row(align=True)
+        for axis, text in (("POS_X", "+X"), ("NEG_X", "-X"), ("POS_Y", "+Y")):
+            operator = row.operator(
+                "object.quad_transition_delete_faces_by_axis",
+                text=text,
+                icon="FACESEL",
+            )
+            operator.axis = axis
+        row = directional.row(align=True)
+        for axis, text in (("NEG_Y", "-Y"), ("POS_Z", "+Z"), ("NEG_Z", "-Z")):
+            operator = row.operator(
+                "object.quad_transition_delete_faces_by_axis",
+                text=text,
+                icon="FACESEL",
+            )
+            operator.axis = axis
+        if context.mode != "OBJECT":
+            directional.label(
+                text="Switch to Object Mode to delete by axis", icon="INFO"
+            )
+
         selection = layout.box()
         selection.label(text="1. Select one quad, a patch, or its boundary")
         selection.label(text="One quad places only the transition core")
