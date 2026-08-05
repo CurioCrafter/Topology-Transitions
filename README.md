@@ -221,6 +221,25 @@ The counts and overlay disappear automatically when no detached face islands
 remain. **Red X-Ray Opacity** controls both the all-error overlay and the brighter
 current-region highlight.
 
+## Directional Merge
+
+In Edit Mode, select the close vertices that should weld and set **Merge
+Distance**. Unlike Blender's ordinary merge-by-distance operation, Directional
+Merge deliberately chooses the surviving position:
+
+- **Center: Keep Outer** keeps the point farther from the object's world-space
+  center.
+- **Center: Keep Inner** keeps the point nearer the object's center.
+- **Face Normals: Keep Outside** keeps the point farther along the average
+  orientation of its surrounding faces.
+- **Face Normals: Keep Inside** keeps the point farther against those normals.
+
+The default **Selected Boundary / Loose** scope targets unwelded surface seams,
+wire vertices, and isolated points. **All Selected** allows internal repair.
+**Protect Existing Edges** avoids collapsing valid short edges by default; turn
+it off when an intentional edge collapse is part of the repair. The same four
+strategies are available from Blender's Edit Mode Merge menu.
+
 ## Main controls
 
 | Control | Effect |
@@ -245,6 +264,7 @@ current-region highlight.
 | Build Triangulated Connection | Opens two face-defined loops and builds a connected triangular copy. |
 | Detached Face X-Ray | Shows all smaller disconnected face islands through the active mesh in red. |
 | Previous / Next Detached Region | Selects and frames one suspect face island for repair. |
+| Directional Merge | Welds selected close vertices toward an explicit outer or inner survivor. |
 | Shrinkwrap Method / Offset | Maintains non-destructive source conformity while editing. |
 | Bake Cage / Ray Preview | Visualizes the envelope and sampled source reach before baking. |
 
@@ -271,6 +291,9 @@ current-region highlight.
   the main body. Objects intentionally containing multiple disconnected shells
   will therefore show their smaller shells as suspects until they are joined or
   moved into separate objects.
+- Face-normal directional merging assumes surrounding face normals are oriented
+  consistently. Recalculate or flip incorrect normals before using those two
+  strategies.
 - Surface projection can choose the wrong sheet on tightly overlapping meshes;
   use an explicit projection target or disable conformity.
 - The bake-ray overlay is a sampled diagnostic, not a replacement for the final

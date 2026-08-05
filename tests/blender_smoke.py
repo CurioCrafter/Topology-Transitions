@@ -1443,6 +1443,166 @@ def assert_detached_face_xray() -> None:
     )
 
 
+def _directional_merge_pair(name: str, first_x: float, second_x: float):
+    clear_scene()
+    mesh = bpy.data.meshes.new(f"{name}_mesh")
+    mesh.from_pydata(((first_x, 0.0, 0.0), (second_x, 0.0, 0.0)), (), ())
+    mesh.update()
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.collection.objects.link(obj)
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    return obj
+
+
+def _directional_merge_normal_fixture(name: str):
+    clear_scene()
+    mesh = bpy.data.meshes.new(f"{name}_mesh")
+    mesh.from_pydata(
+        (
+            (0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0),
+            (0.0, 0.0, 0.02), (1.0, 0.0, 0.02), (0.0, 1.0, 0.02),
+        ),
+        (),
+        ((0, 1, 2), (3, 4, 5)),
+    )
+    mesh.update()
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.collection.objects.link(obj)
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+    bpy.ops.object.mode_set(mode="EDIT")
+    bm = bmesh.from_edit_mesh(mesh)
+    bm.verts.ensure_lookup_table()
+    for vertex in bm.verts:
+        vertex.select_set(vertex.index in {0, 3})
+    bm.select_mode = {"VERT"}
+    bpy.context.tool_settings.mesh_select_mode = (True, False, False)
+    bmesh.update_edit_mesh(mesh, loop_triangles=False, destructive=False)
+    return obj
+
+
+def assert_directional_merge() -> None:
+    outer = _directional_merge_pair("DirectionalOuter", 0.95, 1.0)
+    outer_result = bpy.ops.mesh.quad_transition_directional_merge(
+        distance=0.1,
+        strategy="RADIAL_OUTER",
+        scope="BOUNDARY",
+        skip_connected=True,
+    )
+    outer_bm = bmesh.from_edit_mesh(outer.data)
+    outer_bm.verts.ensure_lookup_table()
+    if (
+        outer_result != {"FINISHED"}
+        or len(outer_bm.verts) != 1
+        or abs(outer_bm.verts[0].co.x - 1.0) > 1.0e-6
+    ):
+        raise AssertionError("Directional radial outer merge kept the wrong vertex")
+
+    inner = _directional_merge_pair("DirectionalInner", 0.95, 1.0)
+    inner_result = bpy.ops.mesh.quad_transition_directional_merge(
+        distance=0.1,
+        strategy="RADIAL_INNER",
+        scope="ALL_SELECTED",
+        skip_connected=True,
+    )
+    inner_bm = bmesh.from_edit_mesh(inner.data)
+    inner_bm.verts.ensure_lookup_table()
+    if (
+        inner_result != {"FINISHED"}
+        or len(inner_bm.verts) != 1
+        or abs(inner_bm.verts[0].co.x - 0.95) > 1.0e-6
+    ):
+        raise AssertionError("Directional radial inner merge kept the wrong vertex")
+
+    normal_outer = _directional_merge_normal_fixture("DirectionalNormalOuter")
+    normal_outer_result = bpy.ops.mesh.quad_transition_directional_merge(
+        distance=0.03,
+        strategy="NORMAL_OUTER",
+        scope="ALL_SELECTED",
+        skip_connected=True,
+    )
+    normal_outer_bm = bmesh.from_edit_mesh(normal_outer.data)
+    joined_outer = [
+        vertex for vertex in normal_outer_bm.verts if len(vertex.link_faces) == 2
+    ]
+    if (
+        normal_outer_result != {"FINISHED"}
+        or len(joined_outer) != 1
+        or abs(joined_outer[0].co.z - 0.02) > 1.0e-6
+    ):
+        raise AssertionError("Face-normal outside merge kept the wrong vertex")
+
+    normal_inner = _directional_merge_normal_fixture("DirectionalNormalInner")
+    normal_inner_result = bpy.ops.mesh.quad_transition_directional_merge(
+        distance=0.03,
+        strategy="NORMAL_INNER",
+        scope="ALL_SELECTED",
+        skip_connected=True,
+    )
+    normal_inner_bm = bmesh.from_edit_mesh(normal_inner.data)
+    joined_inner = [
+        vertex for vertex in normal_inner_bm.verts if len(vertex.link_faces) == 2
+    ]
+    if (
+        normal_inner_result != {"FINISHED"}
+        or len(joined_inner) != 1
+        or abs(joined_inner[0].co.z) > 1.0e-6
+    ):
+        raise AssertionError("Face-normal inside merge kept the wrong vertex")
+
+    protected = _directional_merge_pair("DirectionalProtected", 0.0, 0.01)
+    protected_bm = bmesh.from_edit_mesh(protected.data)
+    protected_bm.verts.ensure_lookup_table()
+    protected_bm.edges.new((protected_bm.verts[0], protected_bm.verts[1]))
+    bmesh.update_edit_mesh(protected.data, loop_triangles=False, destructive=True)
+    protected_result = bpy.ops.mesh.quad_transition_directional_merge(
+        distance=0.02,
+        strategy="RADIAL_OUTER",
+        scope="BOUNDARY",
+        skip_connected=True,
+    )
+    if protected_result != {"CANCELLED"} or len(protected_bm.verts) != 2:
+        raise AssertionError("Protect Existing Edges did not prevent edge collapse")
+    collapse_result = bpy.ops.mesh.quad_transition_directional_merge(
+        distance=0.02,
+        strategy="RADIAL_OUTER",
+        scope="BOUNDARY",
+        skip_connected=False,
+    )
+    protected_bm = bmesh.from_edit_mesh(protected.data)
+    if collapse_result != {"FINISHED"} or len(protected_bm.verts) != 1:
+        raise AssertionError("Directional merge could not allow an edge collapse")
+
+    transitive = _directional_merge_pair("DirectionalTransitive", 0.0, 0.005)
+    transitive_bm = bmesh.from_edit_mesh(transitive.data)
+    extra = transitive_bm.verts.new((0.01, 0.0, 0.0))
+    extra.select_set(True)
+    transitive_bm.verts.ensure_lookup_table()
+    transitive_bm.edges.new((transitive_bm.verts[0], extra))
+    bmesh.update_edit_mesh(transitive.data, loop_triangles=False, destructive=True)
+    transitive_result = bpy.ops.mesh.quad_transition_directional_merge(
+        distance=0.02,
+        strategy="RADIAL_OUTER",
+        scope="BOUNDARY",
+        skip_connected=True,
+    )
+    transitive_bm = bmesh.from_edit_mesh(transitive.data)
+    if (
+        transitive_result != {"FINISHED"}
+        or len(transitive_bm.verts) != 2
+        or len(transitive_bm.edges) != 1
+    ):
+        raise AssertionError("Protected merge collapsed an edge through a cluster")
+    print(
+        "QT_DIRECTIONAL_MERGE_PASS radial_outer=1 radial_inner=1 "
+        "normal_outer=1 normal_inner=1 protected_edge=1 allowed_collapse=1 "
+        "transitive_edge=1"
+    )
+
+
 def main() -> None:
     topology_transitions.register()
     try:
@@ -1466,6 +1626,7 @@ def main() -> None:
         assert_directional_face_delete()
         assert_target_mesh_connector()
         assert_detached_face_xray()
+        assert_directional_merge()
         assert_connected_ribbon_growth()
         assert_subdivision_preview()
         assert_external_projection_target()
@@ -1475,7 +1636,8 @@ def main() -> None:
             "QT_BLENDER_SMOKE_PASS patterns=13 single_quad=10 rejection_cases=2 "
             "preview=1 external_projection=1 quad_flow=3 example_atlas=1 "
             "repair=6 boundary_input=2 manifold=3 directional_delete=7 "
-            "target_connector=2 detached_xray=1 connected_ribbon=2"
+            "target_connector=2 detached_xray=1 directional_merge=7 "
+            "connected_ribbon=2"
         )
     finally:
         clear_scene()

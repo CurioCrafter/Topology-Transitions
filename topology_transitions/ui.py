@@ -221,6 +221,46 @@ class QT_PT_sidebar(Panel):
         if context.mode != "EDIT_MESH":
             detached.label(text="Enter Edit Mode to inspect", icon="INFO")
 
+        merge = layout.box()
+        merge.label(text="Directional Merge")
+        merge.label(text="Edit Mode: select close vertices")
+        merge.prop(settings, "directional_merge_distance", slider=True)
+        merge.prop(settings, "directional_merge_scope", text="")
+        merge.prop(settings, "directional_merge_skip_connected")
+        merge.prop(settings, "directional_merge_strategy", text="")
+        directional_merge = merge.operator(
+            "mesh.quad_transition_directional_merge",
+            text="Merge Close Vertices",
+            icon="AUTOMERGE_OFF",
+        )
+        directional_merge.distance = settings.directional_merge_distance
+        directional_merge.strategy = settings.directional_merge_strategy
+        directional_merge.scope = settings.directional_merge_scope
+        directional_merge.skip_connected = (
+            settings.directional_merge_skip_connected
+        )
+        row = merge.row(align=True)
+        keep_outer = row.operator(
+            "mesh.quad_transition_directional_merge",
+            text="Keep Outer",
+            icon="TRIA_UP",
+        )
+        keep_outer.distance = settings.directional_merge_distance
+        keep_outer.strategy = "RADIAL_OUTER"
+        keep_outer.scope = settings.directional_merge_scope
+        keep_outer.skip_connected = settings.directional_merge_skip_connected
+        keep_inner = row.operator(
+            "mesh.quad_transition_directional_merge",
+            text="Keep Inner",
+            icon="TRIA_DOWN",
+        )
+        keep_inner.distance = settings.directional_merge_distance
+        keep_inner.strategy = "RADIAL_INNER"
+        keep_inner.scope = settings.directional_merge_scope
+        keep_inner.skip_connected = settings.directional_merge_skip_connected
+        if context.mode != "EDIT_MESH":
+            merge.label(text="Enter Edit Mode to merge", icon="INFO")
+
         directional = layout.box()
         directional.label(text="Directional Face Delete")
         directional.label(text="Object Mode: selected mesh objects")

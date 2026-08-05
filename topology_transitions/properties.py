@@ -21,6 +21,50 @@ def _mesh_object_poll(_self, obj: Object) -> bool:
 
 
 class QT_PG_settings(PropertyGroup):
+    directional_merge_distance: FloatProperty(
+        name="Merge Distance",
+        description="Maximum world-space distance between selected vertices",
+        min=0.0,
+        soft_max=0.1,
+        default=0.001,
+        precision=5,
+        subtype="DISTANCE",
+    )
+    directional_merge_strategy: EnumProperty(
+        name="Direction Strategy",
+        items=(
+            ("RADIAL_OUTER", "Center: Keep Outer", "Keep farther from object center"),
+            ("RADIAL_INNER", "Center: Keep Inner", "Keep nearer object center"),
+            (
+                "NORMAL_OUTER",
+                "Face Normals: Keep Outside",
+                "Keep farther along surrounding face normals",
+            ),
+            (
+                "NORMAL_INNER",
+                "Face Normals: Keep Inside",
+                "Keep farther opposite surrounding face normals",
+            ),
+        ),
+        default="RADIAL_OUTER",
+    )
+    directional_merge_scope: EnumProperty(
+        name="Scope",
+        items=(
+            (
+                "BOUNDARY",
+                "Selected Boundary / Loose",
+                "Only selected open-boundary, wire, or isolated vertices",
+            ),
+            ("ALL_SELECTED", "All Selected", "Every selected vertex"),
+        ),
+        default="BOUNDARY",
+    )
+    directional_merge_skip_connected: BoolProperty(
+        name="Protect Existing Edges",
+        description="Skip close pairs that already share an edge",
+        default=True,
+    )
     loose_xray_opacity: FloatProperty(
         name="Red X-Ray Opacity",
         description="Opacity of detached face islands drawn through the active mesh",

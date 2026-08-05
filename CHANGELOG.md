@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.2 - 2026-08-05
+
+- Added **Directional Merge** for selected close vertices with an explicit
+  survivor direction instead of an arbitrary merge destination: radial outer,
+  radial inner, face-normal outside, or face-normal inside.
+- Added world-space merge distance, boundary/loose-only and all-selected scopes,
+  plus default-on protection against collapsing vertices that already share an
+  edge.
+- Added Directional Merge to the add-on sidebar and Blender's Edit Mode Merge
+  menu, with quick **Keep Outer** and **Keep Inner** buttons.
+
 ## 0.7.1 - 2026-08-05
 
 - Added **Detached Face X-Ray** for finding face islands inside one mesh without
