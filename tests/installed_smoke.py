@@ -173,6 +173,28 @@ def create_connector_fixture():
     return source, target
 
 
+def create_detached_xray_fixture():
+    bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.ops.object.select_all(action="DESELECT")
+    mesh = bpy.data.meshes.new("installed_detached_xray_mesh")
+    mesh.from_pydata(
+        (
+            (0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (2.0, 0.0, 0.0),
+            (0.0, 1.0, 0.0), (1.0, 1.0, 0.0), (2.0, 1.0, 0.0),
+            (0.8, 0.3, 0.03), (1.2, 0.3, 0.03), (1.0, 0.7, 0.03),
+        ),
+        (),
+        ((0, 1, 4, 3), (1, 2, 5, 4), (6, 7, 8)),
+    )
+    mesh.update()
+    obj = bpy.data.objects.new("InstalledDetachedXRay", mesh)
+    bpy.context.collection.objects.link(obj)
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+    bpy.ops.object.mode_set(mode="EDIT")
+    return obj
+
+
 def main() -> None:
     bpy.ops.preferences.addon_enable(module="topology_transitions")
     import topology_transitions
@@ -187,7 +209,7 @@ def main() -> None:
         )
     if not hasattr(bpy.types.Scene, "topology_transitions"):
         raise AssertionError("Installed add-on did not register scene settings")
-    if topology_transitions.bl_info["version"] != (0, 7, 0):
+    if topology_transitions.bl_info["version"] != (0, 7, 1):
         raise AssertionError(
             f"Installed add-on reported {topology_transitions.bl_info['version']}"
         )
@@ -315,6 +337,26 @@ def main() -> None:
     ):
         raise AssertionError("Installed target connector failed")
 
+    detached = create_detached_xray_fixture()
+    detached_result = bpy.ops.mesh.quad_transition_inspect_detached_faces(
+        opacity=0.3
+    )
+    detached_overlay = bpy.data.objects.get(
+        "Topology Transition Detached Face X-Ray"
+    )
+    if (
+        detached_result != {"FINISHED"}
+        or settings.loose_xray_component_count != 1
+        or settings.loose_xray_face_count != 1
+        or detached_overlay is None
+        or len(detached_overlay.data.polygons) != 1
+        or not detached_overlay.show_in_front
+    ):
+        raise AssertionError("Installed Detached Face X-Ray failed")
+    bpy.ops.mesh.quad_transition_clear_detached_xray()
+    bpy.ops.object.mode_set(mode="OBJECT")
+    detached.hide_set(True)
+
     low, target = create_connected_ribbon_fixture()
     ribbon_stats = grow_ribbon_from_stroke(
         bpy.context,
@@ -363,8 +405,8 @@ def main() -> None:
         f"flow_quads={strip_quads} single_quad={len(single_inserted)} "
         f"single_core={len(single_selected)} "
         f"example_quads=186 transitions=8 repairs=1 open_edges=4 "
-        f"directional_delete=1 target_connector=1 ribbon_quads=6 "
-        "shrinkwrap=1 bake_cage=1"
+        f"directional_delete=1 target_connector=1 detached_xray=1 "
+        "ribbon_quads=6 shrinkwrap=1 bake_cage=1"
     )
 
 

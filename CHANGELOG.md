@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.1 - 2026-08-05
+
+- Added **Detached Face X-Ray** for finding face islands inside one mesh without
+  separating the object. Faces are considered properly connected only when they
+  share full mesh edges with the largest connected region.
+- Added an adjustable translucent red overlay drawn in front of the mesh, with
+  Previous/Next controls that select and frame one suspect region at a time.
+- Refreshing the inspection recalculates the remaining islands after repairs;
+  the overlay and counters clear automatically when none remain.
+
 ## 0.7.0 - 2026-08-05
 
 - Added **Target Mesh Connector** for two selected mesh objects. Selected faces

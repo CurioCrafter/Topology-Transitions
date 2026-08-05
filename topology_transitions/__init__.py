@@ -5,7 +5,7 @@ from __future__ import annotations
 bl_info = {
     "name": "Topology Transitions",
     "author": "CurioCrafter",
-    "version": (0, 7, 0),
+    "version": (0, 7, 1),
     "blender": (4, 2, 0),
     "location": "View3D > Sidebar > Quad Transition",
     "description": "Build, repair, and inspect guided quad topology flows",
@@ -21,6 +21,7 @@ def register() -> None:
         direction_delete_ops,
         examples,
         flow_ops,
+        loose_xray_ops,
         manifold_ops,
         operators,
         properties,
@@ -35,6 +36,7 @@ def register() -> None:
     operators.register()
     repair_ops.register()
     manifold_ops.register()
+    loose_xray_ops.register()
     examples.register()
     flow_ops.register()
     ribbon_ops.register()
@@ -51,6 +53,7 @@ def unregister() -> None:
         direction_delete_ops,
         examples,
         flow_ops,
+        loose_xray_ops,
         manifold_ops,
         operators,
         properties,
@@ -62,6 +65,7 @@ def unregister() -> None:
     )
 
     ui.unregister()
+    loose_xray_ops.unregister()
     target_connect_ops.unregister()
     direction_delete_ops.unregister()
     bake_preview_ops.unregister()

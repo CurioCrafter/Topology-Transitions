@@ -21,6 +21,22 @@ def _mesh_object_poll(_self, obj: Object) -> bool:
 
 
 class QT_PG_settings(PropertyGroup):
+    loose_xray_opacity: FloatProperty(
+        name="Red X-Ray Opacity",
+        description="Opacity of detached face islands drawn through the active mesh",
+        min=0.05,
+        max=0.9,
+        default=0.35,
+        subtype="FACTOR",
+    )
+    loose_xray_object_name: StringProperty(name="Inspected Object", default="")
+    loose_xray_component_count: IntProperty(
+        name="Detached Regions", min=0, default=0
+    )
+    loose_xray_component_index: IntProperty(
+        name="Current Detached Region", min=0, default=0
+    )
+    loose_xray_face_count: IntProperty(name="Detached Faces", min=0, default=0)
     target_connect_distance: FloatProperty(
         name="Nearby Delete",
         description=(

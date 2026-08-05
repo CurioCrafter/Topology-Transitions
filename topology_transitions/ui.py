@@ -183,6 +183,44 @@ class QT_PT_sidebar(Panel):
             )
             integrity.label(text=settings.manifold_current_kind)
 
+        detached = layout.box()
+        detached.label(text="Detached Face X-Ray")
+        detached.label(text="Edit Mode: checks islands inside one mesh")
+        detached.prop(settings, "loose_xray_opacity", slider=True)
+        inspect_detached = detached.operator(
+            "mesh.quad_transition_inspect_detached_faces",
+            text="Inspect / Refresh Red X-Ray",
+            icon="HIDE_OFF",
+        )
+        inspect_detached.opacity = settings.loose_xray_opacity
+        row = detached.row(align=True)
+        previous_detached = row.operator(
+            "mesh.quad_transition_step_detached_faces",
+            text="Previous",
+            icon="TRIA_LEFT",
+        )
+        previous_detached.direction = -1
+        previous_detached.opacity = settings.loose_xray_opacity
+        next_detached = row.operator(
+            "mesh.quad_transition_step_detached_faces",
+            text="Next",
+            icon="TRIA_RIGHT",
+        )
+        next_detached.direction = 1
+        next_detached.opacity = settings.loose_xray_opacity
+        detached.operator(
+            "mesh.quad_transition_clear_detached_xray",
+            text="Clear X-Ray",
+            icon="X",
+        )
+        if settings.loose_xray_object_name:
+            detached.label(
+                text=f"{settings.loose_xray_component_count} detached regions | "
+                f"{settings.loose_xray_face_count} faces"
+            )
+        if context.mode != "EDIT_MESH":
+            detached.label(text="Enter Edit Mode to inspect", icon="INFO")
+
         directional = layout.box()
         directional.label(text="Directional Face Delete")
         directional.label(text="Object Mode: selected mesh objects")

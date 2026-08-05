@@ -207,6 +207,20 @@ Both contact regions must produce one closed, non-branching boundary loop. Loop
 vertex counts may differ: the connector advances around whichever side gives
 the shorter next diagonal, producing a continuous triangle strip.
 
+## Detached Face X-Ray
+
+In Edit Mode, **Inspect / Refresh Red X-Ray** finds disconnected face islands
+inside the active mesh without separating the object. The largest edge-connected
+face region is treated as the main body. Every smaller region is shown through
+the mesh in translucent red—even when it is extremely close to, overlaps, or
+touches the main surface without sharing a real edge.
+
+Use **Previous** and **Next** to select and frame one red region at a time. After
+welding, bridging, or deleting the selected problem region, refresh the X-ray.
+The counts and overlay disappear automatically when no detached face islands
+remain. **Red X-Ray Opacity** controls both the all-error overlay and the brighter
+current-region highlight.
+
 ## Main controls
 
 | Control | Effect |
@@ -229,6 +243,8 @@ the shorter next diagonal, producing a continuous triangle strip.
 | Directional Face Delete | Removes selected-object faces by dominant world-axis normal. |
 | Nearby Delete / Red Preview Opacity | Controls target-face reach and the translucent deletion overlay. |
 | Build Triangulated Connection | Opens two face-defined loops and builds a connected triangular copy. |
+| Detached Face X-Ray | Shows all smaller disconnected face islands through the active mesh in red. |
+| Previous / Next Detached Region | Selects and frames one suspect face island for repair. |
 | Shrinkwrap Method / Offset | Maintains non-destructive source conformity while editing. |
 | Bake Cage / Ray Preview | Visualizes the envelope and sampled source reach before baking. |
 
@@ -251,6 +267,10 @@ the shorter next diagonal, producing a continuous triangle strip.
 - Target Mesh Connector currently supports one closed boundary per contact
   region. It creates a new connected object and hides the two originals; it does
   not preserve UV or vertex-color data across the newly combined mesh.
+- Detached Face X-Ray deliberately treats the largest face-connected region as
+  the main body. Objects intentionally containing multiple disconnected shells
+  will therefore show their smaller shells as suspects until they are joined or
+  moved into separate objects.
 - Surface projection can choose the wrong sheet on tightly overlapping meshes;
   use an explicit projection target or disable conformity.
 - The bake-ray overlay is a sampled diagnostic, not a replacement for the final

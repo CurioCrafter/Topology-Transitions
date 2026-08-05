@@ -1351,6 +1351,98 @@ def assert_target_mesh_connector() -> None:
     print("QT_TARGET_CONNECTOR_MANIFOLD_PASS faces=18 triangles=8 edge_faces=2")
 
 
+def assert_detached_face_xray() -> None:
+    clear_scene()
+    vertices = [
+        (float(x), float(y), 0.0) for y in range(3) for x in range(3)
+    ]
+    faces = [
+        (0, 1, 4, 3),
+        (1, 2, 5, 4),
+        (3, 4, 7, 6),
+        (4, 5, 8, 7),
+    ]
+    vertices.extend(
+        ((0.8, 0.8, 0.04), (1.2, 0.8, 0.04), (1.0, 1.2, 0.04))
+    )
+    faces.append((9, 10, 11))
+    vertices.extend(
+        (
+            (0.0, 0.2, 0.03),
+            (1.0, 0.2, 0.03),
+            (2.0, 0.2, 0.03),
+            (0.0, 1.2, 0.03),
+            (1.0, 1.2, 0.03),
+            (2.0, 1.2, 0.03),
+        )
+    )
+    faces.extend(((12, 13, 16, 15), (13, 14, 17, 16)))
+    mesh = bpy.data.meshes.new("detached_xray_mesh")
+    mesh.from_pydata(vertices, (), faces)
+    mesh.update()
+    obj = bpy.data.objects.new("DetachedXRay", mesh)
+    bpy.context.collection.objects.link(obj)
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+    bpy.ops.object.mode_set(mode="EDIT")
+
+    inspect = bpy.ops.mesh.quad_transition_inspect_detached_faces(opacity=0.27)
+    settings = bpy.context.scene.topology_transitions
+    overlay = bpy.data.objects.get("Topology Transition Detached Face X-Ray")
+    bm = bmesh.from_edit_mesh(mesh)
+    if (
+        inspect != {"FINISHED"}
+        or settings.loose_xray_component_count != 2
+        or settings.loose_xray_face_count != 3
+        or overlay is None
+        or len(overlay.data.polygons) != 3
+        or not overlay.show_in_front
+        or len([face for face in bm.faces if face.select]) != 1
+    ):
+        raise AssertionError("Detached Face X-Ray did not identify both error regions")
+
+    step = bpy.ops.mesh.quad_transition_step_detached_faces(
+        direction=1, opacity=0.27
+    )
+    bm = bmesh.from_edit_mesh(mesh)
+    selected = [face for face in bm.faces if face.select]
+    if (
+        step != {"FINISHED"}
+        or settings.loose_xray_component_index != 1
+        or len(selected) != 2
+    ):
+        raise AssertionError("Detached Face X-Ray did not step to the next region")
+    bmesh.ops.delete(bm, geom=selected, context="FACES")
+    bmesh.update_edit_mesh(mesh, loop_triangles=True, destructive=True)
+    bpy.ops.mesh.quad_transition_inspect_detached_faces(opacity=0.27)
+    bm = bmesh.from_edit_mesh(mesh)
+    if (
+        settings.loose_xray_component_count != 1
+        or settings.loose_xray_face_count != 1
+        or len([face for face in bm.faces if face.select]) != 1
+    ):
+        raise AssertionError("Detached Face X-Ray did not refresh after a repair")
+    bmesh.ops.delete(
+        bm,
+        geom=[face for face in bm.faces if face.select],
+        context="FACES",
+    )
+    bmesh.update_edit_mesh(mesh, loop_triangles=True, destructive=True)
+    clean = bpy.ops.mesh.quad_transition_inspect_detached_faces(opacity=0.27)
+    if (
+        clean != {"FINISHED"}
+        or settings.loose_xray_component_count != 0
+        or settings.loose_xray_face_count != 0
+        or bpy.data.objects.get("Topology Transition Detached Face X-Ray")
+        is not None
+    ):
+        raise AssertionError("Detached Face X-Ray did not reach a clean state")
+    print(
+        "QT_DETACHED_XRAY_PASS regions=2 faces=3 opacity=0.27 "
+        "step_faces=2 refresh_regions=1 clean=1"
+    )
+
+
 def main() -> None:
     topology_transitions.register()
     try:
@@ -1373,6 +1465,7 @@ def main() -> None:
         assert_manifold_diagnostics()
         assert_directional_face_delete()
         assert_target_mesh_connector()
+        assert_detached_face_xray()
         assert_connected_ribbon_growth()
         assert_subdivision_preview()
         assert_external_projection_target()
@@ -1382,7 +1475,7 @@ def main() -> None:
             "QT_BLENDER_SMOKE_PASS patterns=13 single_quad=10 rejection_cases=2 "
             "preview=1 external_projection=1 quad_flow=3 example_atlas=1 "
             "repair=6 boundary_input=2 manifold=3 directional_delete=7 "
-            "target_connector=2 connected_ribbon=2"
+            "target_connector=2 detached_xray=1 connected_ribbon=2"
         )
     finally:
         clear_scene()
