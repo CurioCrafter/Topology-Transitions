@@ -145,6 +145,34 @@ def create_connected_ribbon_fixture():
     return low, target
 
 
+def create_connector_fixture():
+    bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.ops.object.select_all(action="DESELECT")
+    source_mesh = bpy.data.meshes.new("installed_connector_source_mesh")
+    source_mesh.from_pydata(
+        ((-0.5, -0.5, 0.04), (0.5, -0.5, 0.04),
+         (0.5, 0.5, 0.04), (-0.5, 0.5, 0.04)),
+        (),
+        ((0, 1, 2, 3),),
+    )
+    source_mesh.polygons[0].select = True
+    source = bpy.data.objects.new("InstalledConnectorSource", source_mesh)
+    bpy.context.collection.objects.link(source)
+    target_mesh = bpy.data.meshes.new("installed_connector_target_mesh")
+    target_mesh.from_pydata(
+        ((-0.5, -0.5, 0.0), (0.5, -0.5, 0.0),
+         (0.5, 0.5, 0.0), (-0.5, 0.5, 0.0)),
+        (),
+        ((0, 3, 2, 1),),
+    )
+    target = bpy.data.objects.new("InstalledConnectorTarget", target_mesh)
+    bpy.context.collection.objects.link(target)
+    source.select_set(True)
+    target.select_set(True)
+    bpy.context.view_layer.objects.active = source
+    return source, target
+
+
 def main() -> None:
     bpy.ops.preferences.addon_enable(module="topology_transitions")
     import topology_transitions
@@ -159,7 +187,7 @@ def main() -> None:
         )
     if not hasattr(bpy.types.Scene, "topology_transitions"):
         raise AssertionError("Installed add-on did not register scene settings")
-    if topology_transitions.bl_info["version"] != (0, 6, 3):
+    if topology_transitions.bl_info["version"] != (0, 7, 0):
         raise AssertionError(
             f"Installed add-on reported {topology_transitions.bl_info['version']}"
         )
@@ -269,6 +297,24 @@ def main() -> None:
     ):
         raise AssertionError(f"Installed directional delete failed: {delete_result}")
 
+    source, target = create_connector_fixture()
+    connector_preview = bpy.ops.object.quad_transition_preview_target_connection(
+        distance=0.05, opacity=0.4
+    )
+    connector_result = bpy.ops.object.quad_transition_build_target_connection(
+        distance=0.05
+    )
+    connected = bpy.context.active_object
+    if (
+        connector_preview != {"FINISHED"}
+        or connector_result != {"FINISHED"}
+        or connected is None
+        or connected in {source, target}
+        or len(connected.data.polygons) != 8
+        or any(len(face.vertices) != 3 for face in connected.data.polygons)
+    ):
+        raise AssertionError("Installed target connector failed")
+
     low, target = create_connected_ribbon_fixture()
     ribbon_stats = grow_ribbon_from_stroke(
         bpy.context,
@@ -317,7 +363,8 @@ def main() -> None:
         f"flow_quads={strip_quads} single_quad={len(single_inserted)} "
         f"single_core={len(single_selected)} "
         f"example_quads=186 transitions=8 repairs=1 open_edges=4 "
-        f"directional_delete=1 ribbon_quads=6 shrinkwrap=1 bake_cage=1"
+        f"directional_delete=1 target_connector=1 ribbon_quads=6 "
+        "shrinkwrap=1 bake_cage=1"
     )
 
 

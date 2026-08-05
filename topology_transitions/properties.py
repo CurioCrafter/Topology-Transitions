@@ -21,6 +21,25 @@ def _mesh_object_poll(_self, obj: Object) -> bool:
 
 
 class QT_PG_settings(PropertyGroup):
+    target_connect_distance: FloatProperty(
+        name="Nearby Delete",
+        description=(
+            "World-space distance around the selected contact faces used to mark "
+            "target faces"
+        ),
+        min=0.0,
+        soft_max=10.0,
+        default=0.1,
+        subtype="DISTANCE",
+    )
+    target_connect_opacity: FloatProperty(
+        name="Red Preview Opacity",
+        description="Opacity of the target-face deletion preview",
+        min=0.05,
+        max=0.9,
+        default=0.35,
+        subtype="FACTOR",
+    )
     show_drawing_tools: BoolProperty(
         name="Show Connected Drawing",
         description=(

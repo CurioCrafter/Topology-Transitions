@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.0 - 2026-08-05
+
+- Added **Target Mesh Connector** for two selected mesh objects. Selected faces
+  on the active contact mesh define one boundary loop; the nearby-delete slider
+  chooses faces on the other target mesh and defines its matching loop.
+- Added a translucent red deletion preview with an opacity slider, plus an
+  explicit clear button, so target face removal is visible before building.
+- Added non-destructive connected-result generation: contact faces are omitted
+  from a new combined mesh, unequal closed loops are paired by proximity, and a
+  fully triangulated bridge joins them. The two originals are preserved hidden.
+
 ## 0.6.3 - 2026-08-04
 
 - Added **Directional Face Delete** Object Mode buttons for +X, -X, +Y, -Y,

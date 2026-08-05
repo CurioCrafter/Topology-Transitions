@@ -207,6 +207,34 @@ class QT_PT_sidebar(Panel):
                 text="Switch to Object Mode to delete by axis", icon="INFO"
             )
 
+        connector = layout.box()
+        connector.label(text="Target Mesh Connector")
+        connector.label(text="Select contact faces on the active mesh")
+        connector.label(text="Object Mode: select it plus one target")
+        connector.prop(settings, "target_connect_distance", slider=True)
+        connector.prop(settings, "target_connect_opacity", slider=True)
+        row = connector.row(align=True)
+        preview_connection = row.operator(
+            "object.quad_transition_preview_target_connection",
+            text="Preview Red",
+            icon="HIDE_OFF",
+        )
+        preview_connection.distance = settings.target_connect_distance
+        preview_connection.opacity = settings.target_connect_opacity
+        row.operator(
+            "object.quad_transition_clear_target_connection_preview",
+            text="Clear",
+            icon="X",
+        )
+        build_connection = connector.operator(
+            "object.quad_transition_build_target_connection",
+            text="Build Triangulated Connection",
+            icon="MOD_TRIANGULATE",
+        )
+        build_connection.distance = settings.target_connect_distance
+        if context.mode != "OBJECT":
+            connector.label(text="Return to Object Mode to preview/build", icon="INFO")
+
         selection = layout.box()
         selection.label(text="1. Select one quad, a patch, or its boundary")
         selection.label(text="One quad places only the transition core")

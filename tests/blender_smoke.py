@@ -51,6 +51,8 @@ TRANSITION_ROLE_CORE = 2
 def clear_scene() -> None:
     if bpy.context.object is not None and bpy.context.object.mode != "OBJECT":
         bpy.ops.object.mode_set(mode="OBJECT")
+    for obj in bpy.context.scene.objects:
+        obj.hide_set(False)
     bpy.ops.object.select_all(action="SELECT")
     bpy.ops.object.delete(use_global=False)
     for mesh in list(bpy.data.meshes):
@@ -1243,6 +1245,112 @@ def assert_directional_face_delete() -> None:
     print("QT_DIRECTIONAL_DELETE_PASS axes=6 linked_single_user=1")
 
 
+def assert_target_mesh_connector() -> None:
+    clear_scene()
+    source_mesh = bpy.data.meshes.new("connector_source_mesh")
+    source_mesh.from_pydata(
+        ((-0.5, -0.5, 0.05), (0.5, -0.5, 0.05),
+         (0.5, 0.5, 0.05), (-0.5, 0.5, 0.05)),
+        (),
+        ((0, 1, 2, 3),),
+    )
+    source_mesh.polygons[0].select = True
+    source = bpy.data.objects.new("ConnectorSource", source_mesh)
+    bpy.context.collection.objects.link(source)
+
+    target_mesh = bpy.data.meshes.new("connector_target_mesh")
+    target_mesh.from_pydata(
+        (
+            (-1.5, -0.5, 0.0), (-0.5, -0.5, 0.0),
+            (0.5, -0.5, 0.0), (1.5, -0.5, 0.0),
+            (-1.5, 0.5, 0.0), (-0.5, 0.5, 0.0),
+            (0.5, 0.5, 0.0), (1.5, 0.5, 0.0),
+        ),
+        (),
+        ((0, 4, 5, 1), (1, 5, 6, 2), (2, 6, 7, 3)),
+    )
+    target = bpy.data.objects.new("ConnectorTarget", target_mesh)
+    bpy.context.collection.objects.link(target)
+    source.select_set(True)
+    target.select_set(True)
+    bpy.context.view_layer.objects.active = source
+
+    preview_result = bpy.ops.object.quad_transition_preview_target_connection(
+        distance=0.06, opacity=0.42
+    )
+    preview = bpy.data.objects.get("Topology Transition Target Delete Preview")
+    if (
+        preview_result != {"FINISHED"}
+        or preview is None
+        or len(preview.data.polygons) != 1
+        or abs(preview.color[3] - 0.42) > 1.0e-5
+    ):
+        raise AssertionError("Target connector did not create its red face preview")
+
+    wide_preview_result = bpy.ops.object.quad_transition_preview_target_connection(
+        distance=0.51, opacity=0.42
+    )
+    wide_preview = bpy.data.objects.get("Topology Transition Target Delete Preview")
+    if (
+        wide_preview_result != {"FINISHED"}
+        or wide_preview is None
+        or len(wide_preview.data.polygons) != 3
+    ):
+        raise AssertionError("Nearby Delete slider did not expand the red preview")
+
+    result = bpy.ops.object.quad_transition_build_target_connection(distance=0.06)
+    connected = bpy.context.active_object
+    if (
+        result != {"FINISHED"}
+        or connected is None
+        or connected in {source, target}
+        or len(connected.data.polygons) != 10
+        or sum(len(face.vertices) == 3 for face in connected.data.polygons) != 8
+        or sum(len(face.vertices) == 4 for face in connected.data.polygons) != 2
+        or not source.hide_get()
+        or not target.hide_get()
+        or bpy.data.objects.get("Topology Transition Target Delete Preview") is not None
+    ):
+        raise AssertionError(
+            "Target connector did not create the expected triangle bridge"
+        )
+    print(
+        "QT_TARGET_CONNECTOR_PASS preview_faces=1 expanded_preview=3 opacity=0.42 "
+        "deleted_source=1 deleted_target=1 bridge_triangles=8 originals=hidden"
+    )
+
+    clear_scene()
+    bpy.ops.mesh.primitive_cube_add(size=1.0, location=(0.0, 0.0, -0.5))
+    solid_target = bpy.context.object
+    solid_target.name = "ConnectorSolidTarget"
+    bpy.ops.mesh.primitive_cube_add(size=1.0, location=(0.0, 0.0, 0.55))
+    solid_source = bpy.context.object
+    solid_source.name = "ConnectorSolidSource"
+    for polygon in solid_source.data.polygons:
+        polygon.select = polygon.center.z < -0.49
+    solid_target.select_set(True)
+    solid_source.select_set(True)
+    bpy.context.view_layer.objects.active = solid_source
+    solid_result = bpy.ops.object.quad_transition_build_target_connection(
+        distance=0.06
+    )
+    solid = bpy.context.active_object
+    solid_bm = bmesh.new()
+    try:
+        solid_bm.from_mesh(solid.data)
+        manifold = all(len(edge.link_faces) == 2 for edge in solid_bm.edges)
+    finally:
+        solid_bm.free()
+    if (
+        solid_result != {"FINISHED"}
+        or len(solid.data.polygons) != 18
+        or sum(len(face.vertices) == 3 for face in solid.data.polygons) != 8
+        or not manifold
+    ):
+        raise AssertionError("Solid target connector result was not manifold")
+    print("QT_TARGET_CONNECTOR_MANIFOLD_PASS faces=18 triangles=8 edge_faces=2")
+
+
 def main() -> None:
     topology_transitions.register()
     try:
@@ -1264,6 +1372,7 @@ def main() -> None:
         assert_mixed_and_edge_boundary_transition_inputs()
         assert_manifold_diagnostics()
         assert_directional_face_delete()
+        assert_target_mesh_connector()
         assert_connected_ribbon_growth()
         assert_subdivision_preview()
         assert_external_projection_target()
@@ -1273,7 +1382,7 @@ def main() -> None:
             "QT_BLENDER_SMOKE_PASS patterns=13 single_quad=10 rejection_cases=2 "
             "preview=1 external_projection=1 quad_flow=3 example_atlas=1 "
             "repair=6 boundary_input=2 manifold=3 directional_delete=7 "
-            "connected_ribbon=2"
+            "target_connector=2 connected_ribbon=2"
         )
     finally:
         clear_scene()

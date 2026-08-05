@@ -187,6 +187,26 @@ chosen direction. If a selected object shares mesh data with another object, the
 selected object is made single-user first so unselected duplicates are not
 silently changed.
 
+## Target Mesh Connector
+
+The connector builds a triangular join between two mesh objects while letting
+you inspect exactly what will be removed first:
+
+1. On the mesh that will connect into the target, select one contiguous contact
+   face region in Edit Mode, then return to Object Mode.
+2. Select the target mesh as well, keeping the contact mesh active.
+3. Adjust **Nearby Delete**. This is a world-space distance around the selected
+   contact faces.
+4. Click **Preview Red**. Target faces inside that distance appear as a
+   translucent red overlay; **Red Preview Opacity** controls its visibility.
+5. Click **Build Triangulated Connection**. A new combined object omits both
+   contact regions and joins their boundary loops with triangles. The originals
+   remain available but are hidden.
+
+Both contact regions must produce one closed, non-branching boundary loop. Loop
+vertex counts may differ: the connector advances around whichever side gives
+the shorter next diagonal, producing a continuous triangle strip.
+
 ## Main controls
 
 | Control | Effect |
@@ -207,6 +227,8 @@ silently changed.
 | Show Full Map | Colors all broad regions while one remains active. |
 | Focus View | Frames the active region/band after each step. |
 | Directional Face Delete | Removes selected-object faces by dominant world-axis normal. |
+| Nearby Delete / Red Preview Opacity | Controls target-face reach and the translucent deletion overlay. |
+| Build Triangulated Connection | Opens two face-defined loops and builds a connected triangular copy. |
 | Shrinkwrap Method / Offset | Maintains non-destructive source conformity while editing. |
 | Bake Cage / Ray Preview | Visualizes the envelope and sampled source reach before baking. |
 
@@ -226,6 +248,9 @@ silently changed.
 - Directional Face Delete works from Object Mode and uses world-space dominant
   normals, so rotated objects are judged by how their faces point in the scene,
   not by their local mesh axes.
+- Target Mesh Connector currently supports one closed boundary per contact
+  region. It creates a new connected object and hides the two originals; it does
+  not preserve UV or vertex-color data across the newly combined mesh.
 - Surface projection can choose the wrong sheet on tightly overlapping meshes;
   use an explicit projection target or disable conformity.
 - The bake-ray overlay is a sampled diagnostic, not a replacement for the final
