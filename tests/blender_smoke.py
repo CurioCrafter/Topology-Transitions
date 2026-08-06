@@ -23,6 +23,7 @@ if str(ROOT) not in sys.path:
 
 import topology_transitions  # noqa: E402
 from topology_transitions.directional_merge_ops import (  # noqa: E402
+    DirectionalMergeError,
     merge_selected_by_direction,
 )
 from topology_transitions.flow_ops import build_flow_session  # noqa: E402
@@ -1502,6 +1503,20 @@ def _directional_merge_normal_fixture(name: str):
 
 
 def assert_directional_merge() -> None:
+    explicit = _directional_merge_pair("DirectionalExplicitPair", 0.5, 1.5)
+    explicit_result = bpy.ops.mesh.quad_transition_directional_merge(
+        distance=0.0001,
+        strategy="RADIAL_OUTER",
+    )
+    explicit_bm = bmesh.from_edit_mesh(explicit.data)
+    explicit_bm.verts.ensure_lookup_table()
+    if (
+        explicit_result != {"FINISHED"}
+        or len(explicit_bm.verts) != 1
+        or abs(explicit_bm.verts[0].co.x - 1.5) > 1.0e-6
+    ):
+        raise AssertionError("Exact selected pair did not override Merge Distance")
+
     outer = _directional_merge_pair("DirectionalOuter", 0.95, 1.0)
     outer_result = bpy.ops.mesh.quad_transition_directional_merge(
         distance=0.1,
@@ -1679,10 +1694,31 @@ def assert_directional_merge() -> None:
         or (viewport_bm.verts[0].co - expected).length > 1.0e-6
     ):
         raise AssertionError("View merge operator did not use the active viewport")
+
+    diagnostic = _directional_merge_pair("DirectionalDiagnostic", 0.0, 0.05)
+    diagnostic_bm = bmesh.from_edit_mesh(diagnostic.data)
+    third = diagnostic_bm.verts.new((0.1, 0.0, 0.0))
+    third.select_set(True)
+    bmesh.update_edit_mesh(diagnostic.data, loop_triangles=False, destructive=True)
+    try:
+        merge_selected_by_direction(
+            bpy.context,
+            distance=0.001,
+            strategy="RADIAL_OUTER",
+            scope="ALL_SELECTED",
+            skip_connected=False,
+            force_selected_pair=False,
+        )
+    except DirectionalMergeError as exc:
+        if "Nearest eligible pair is" not in str(exc):
+            raise AssertionError("Directional merge gave an unhelpful warning") from exc
+    else:
+        raise AssertionError("Directional merge diagnostic fixture unexpectedly merged")
     print(
-        "QT_DIRECTIONAL_MERGE_PASS radial_outer=1 radial_inner=1 "
+        "QT_DIRECTIONAL_MERGE_PASS explicit_pair=1 radial_outer=1 radial_inner=1 "
         "normal_outer=1 normal_inner=1 protected_edge=1 allowed_collapse=1 "
-        "transitive_edge=1 view_toward=1 view_away=1 view_operator=1"
+        "transitive_edge=1 view_toward=1 view_away=1 view_operator=1 "
+        "nearest_diagnostic=1"
     )
 
 
@@ -1719,7 +1755,7 @@ def main() -> None:
             "QT_BLENDER_SMOKE_PASS patterns=13 single_quad=10 rejection_cases=2 "
             "preview=1 external_projection=1 quad_flow=3 example_atlas=1 "
             "repair=6 boundary_input=2 manifold=3 directional_delete=7 "
-            "target_connector=2 detached_xray=1 directional_merge=10 "
+            "target_connector=2 detached_xray=1 directional_merge=12 "
             "connected_ribbon=2"
         )
     finally:

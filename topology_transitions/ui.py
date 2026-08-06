@@ -227,6 +227,7 @@ class QT_PT_sidebar(Panel):
         merge.prop(settings, "directional_merge_distance", slider=True)
         merge.prop(settings, "directional_merge_scope", text="")
         merge.prop(settings, "directional_merge_skip_connected")
+        merge.prop(settings, "directional_merge_force_pair")
         merge.prop(settings, "directional_merge_strategy", text="")
         directional_merge = merge.operator(
             "mesh.quad_transition_directional_merge",
@@ -239,6 +240,7 @@ class QT_PT_sidebar(Panel):
         directional_merge.skip_connected = (
             settings.directional_merge_skip_connected
         )
+        directional_merge.force_selected_pair = settings.directional_merge_force_pair
         row = merge.row(align=True)
         keep_outer = row.operator(
             "mesh.quad_transition_directional_merge",
@@ -249,6 +251,7 @@ class QT_PT_sidebar(Panel):
         keep_outer.strategy = "RADIAL_OUTER"
         keep_outer.scope = settings.directional_merge_scope
         keep_outer.skip_connected = settings.directional_merge_skip_connected
+        keep_outer.force_selected_pair = settings.directional_merge_force_pair
         keep_inner = row.operator(
             "mesh.quad_transition_directional_merge",
             text="Keep Inner",
@@ -258,6 +261,7 @@ class QT_PT_sidebar(Panel):
         keep_inner.strategy = "RADIAL_INNER"
         keep_inner.scope = settings.directional_merge_scope
         keep_inner.skip_connected = settings.directional_merge_skip_connected
+        keep_inner.force_selected_pair = settings.directional_merge_force_pair
         row = merge.row(align=True)
         keep_toward = row.operator(
             "mesh.quad_transition_directional_merge",
@@ -268,6 +272,7 @@ class QT_PT_sidebar(Panel):
         keep_toward.strategy = "VIEW_TOWARD"
         keep_toward.scope = settings.directional_merge_scope
         keep_toward.skip_connected = settings.directional_merge_skip_connected
+        keep_toward.force_selected_pair = settings.directional_merge_force_pair
         keep_away = row.operator(
             "mesh.quad_transition_directional_merge",
             text="Away From View",
@@ -277,6 +282,7 @@ class QT_PT_sidebar(Panel):
         keep_away.strategy = "VIEW_AWAY"
         keep_away.scope = settings.directional_merge_scope
         keep_away.skip_connected = settings.directional_merge_skip_connected
+        keep_away.force_selected_pair = settings.directional_merge_force_pair
         if context.mode != "EDIT_MESH":
             merge.label(text="Enter Edit Mode to merge", icon="INFO")
 

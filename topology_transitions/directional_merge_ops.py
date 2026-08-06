@@ -187,6 +187,20 @@ def _proximity_clusters(
     ]
 
 
+def _minimum_world_distance(obj: Any, vertices: list[Any]) -> float:
+    tree = KDTree(len(vertices))
+    positions = [obj.matrix_world @ vertex.co for vertex in vertices]
+    for index, position in enumerate(positions):
+        tree.insert(position, index)
+    tree.balance()
+    nearest = float("inf")
+    for index, position in enumerate(positions):
+        for _coordinate, other_index, distance in tree.find_n(position, 2):
+            if other_index != index:
+                nearest = min(nearest, distance)
+    return nearest
+
+
 def merge_selected_by_direction(
     context: Any,
     *,
@@ -195,6 +209,7 @@ def merge_selected_by_direction(
     scope: str,
     skip_connected: bool,
     view_matrix: Any | None = None,
+    force_selected_pair: bool = True,
 ) -> dict[str, int]:
     obj = context.edit_object
     if obj is None or obj.type != "MESH" or obj.mode != "EDIT":
@@ -209,22 +224,48 @@ def merge_selected_by_direction(
     bm.verts.ensure_lookup_table()
     bm.verts.index_update()
     bm.normal_update()
+    all_selected = [vertex for vertex in bm.verts if vertex.select]
     selected = [
         vertex
-        for vertex in bm.verts
-        if vertex.select
-        and (scope == "ALL_SELECTED" or _is_boundary_or_loose(vertex))
+        for vertex in all_selected
+        if scope == "ALL_SELECTED" or _is_boundary_or_loose(vertex)
     ]
     if len(selected) < 2:
+        if len(all_selected) >= 2 and scope == "BOUNDARY":
+            raise DirectionalMergeError(
+                f"{len(all_selected)} vertices are selected, but fewer than two "
+                "are boundary/loose vertices; change Scope to All Selected"
+            )
         raise DirectionalMergeError(
             "Select at least two eligible vertices; change Scope if needed"
         )
-    clusters = _proximity_clusters(
-        obj, selected, max(distance, 0.0), skip_connected
-    )
+    if len(selected) == 2 and force_selected_pair:
+        connected = any(
+            edge.other_vert(selected[0]) is selected[1]
+            for edge in selected[0].link_edges
+        )
+        if skip_connected and connected:
+            raise DirectionalMergeError(
+                "The selected pair already shares an edge; turn off Protect "
+                "Existing Edges to merge it"
+            )
+        clusters = [selected]
+    else:
+        clusters = _proximity_clusters(
+            obj, selected, max(distance, 0.0), skip_connected
+        )
     if not clusters:
+        if skip_connected and _proximity_clusters(
+            obj, selected, max(distance, 0.0), False
+        ):
+            raise DirectionalMergeError(
+                "Close pairs were blocked by Protect Existing Edges; turn it off "
+                "to allow an edge collapse"
+            )
+        nearest = _minimum_world_distance(obj, selected)
         raise DirectionalMergeError(
-            "No eligible selected vertices are within Merge Distance"
+            f"Nearest eligible pair is {nearest:.6g} away; increase Merge Distance "
+            f"above {distance:.6g}"
         )
     targetmap: dict[Any, Any] = {}
     anchors: list[Any] = []
@@ -275,10 +316,18 @@ class QT_OT_directional_merge(Operator):
         items=STRATEGY_ITEMS,
         default="RADIAL_OUTER",
     )
-    scope: EnumProperty(name="Scope", items=SCOPE_ITEMS, default="BOUNDARY")
+    scope: EnumProperty(name="Scope", items=SCOPE_ITEMS, default="ALL_SELECTED")
     skip_connected: BoolProperty(
         name="Protect Existing Edges",
         description="Do not merge a close pair that already shares a mesh edge",
+        default=False,
+    )
+    force_selected_pair: BoolProperty(
+        name="Always Merge Exact Pair",
+        description=(
+            "When exactly two eligible vertices are selected, merge that explicit "
+            "pair even when it exceeds Merge Distance"
+        ),
         default=True,
     )
 
@@ -303,6 +352,7 @@ class QT_OT_directional_merge(Operator):
                 scope=self.scope,
                 skip_connected=self.skip_connected,
                 view_matrix=view_matrix,
+                force_selected_pair=self.force_selected_pair,
             )
         except DirectionalMergeError as exc:
             self.report({"WARNING"}, str(exc))

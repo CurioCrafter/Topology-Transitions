@@ -68,11 +68,16 @@ class QT_PG_settings(PropertyGroup):
             ),
             ("ALL_SELECTED", "All Selected", "Every selected vertex"),
         ),
-        default="BOUNDARY",
+        default="ALL_SELECTED",
     )
     directional_merge_skip_connected: BoolProperty(
         name="Protect Existing Edges",
         description="Skip close pairs that already share an edge",
+        default=False,
+    )
+    directional_merge_force_pair: BoolProperty(
+        name="Always Merge Exact Pair",
+        description="Ignore distance when exactly two eligible vertices are selected",
         default=True,
     )
     loose_xray_opacity: FloatProperty(

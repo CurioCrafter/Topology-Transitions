@@ -237,10 +237,11 @@ Merge deliberately chooses the surviving position:
 - **View: Keep Away From You** keeps the deeper point along the direction you
   are currently looking.
 
-The default **Selected Boundary / Loose** scope targets unwelded surface seams,
-wire vertices, and isolated points. **All Selected** allows internal repair.
-**Protect Existing Edges** avoids collapsing valid short edges by default; turn
-it off when an intentional edge collapse is part of the repair. The same four
+The optional **Selected Boundary / Loose** scope targets unwelded surface seams,
+wire vertices, and isolated points. The default is **All Selected** so an
+explicit vertex selection works immediately. **Protect Existing Edges** is
+available for seam-only repair but is off by default. **Always Merge Exact Pair**
+lets exactly two selected vertices override Merge Distance. The same six
 strategies are available from Blender's Edit Mode Merge menu.
 The two view strategies read the active 3D viewport, so they follow perspective,
 orthographic, and camera-aligned views instead of using a fixed world axis.

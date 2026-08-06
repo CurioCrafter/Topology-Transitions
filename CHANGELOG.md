@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.4 - 2026-08-05
+
+- Fixed Directional Merge appearing to ignore valid selections. It now defaults
+  to **All Selected**, allows connected vertices by default, and treats exactly
+  two selected vertices as an explicit pair that can ignore Merge Distance.
+- Replaced the generic no-eligible-vertices warning with specific guidance for
+  boundary-scope filtering, edge protection, or the measured nearest-pair
+  distance that the threshold needs to exceed.
+
 ## 0.7.3 - 2026-08-05
 
 - Added **View: Keep Toward You** and **View: Keep Away From You** Directional
