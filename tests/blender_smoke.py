@@ -14,7 +14,7 @@ from types import SimpleNamespace
 
 import bmesh
 import bpy
-from mathutils import Vector
+from mathutils import Matrix, Vector
 from mathutils.bvhtree import BVHTree
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +22,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import topology_transitions  # noqa: E402
+from topology_transitions.directional_merge_ops import (  # noqa: E402
+    merge_selected_by_direction,
+)
 from topology_transitions.flow_ops import build_flow_session  # noqa: E402
 from topology_transitions.operators import _make_template_and_layout  # noqa: E402
 from topology_transitions.ribbon import build_transition_ribbon  # noqa: E402
@@ -1457,6 +1460,20 @@ def _directional_merge_pair(name: str, first_x: float, second_x: float):
     return obj
 
 
+def _directional_merge_view_pair(name: str, first_z: float, second_z: float):
+    clear_scene()
+    mesh = bpy.data.meshes.new(f"{name}_mesh")
+    mesh.from_pydata(((0.0, 0.0, first_z), (0.0, 0.0, second_z)), (), ())
+    mesh.update()
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.collection.objects.link(obj)
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    return obj
+
+
 def _directional_merge_normal_fixture(name: str):
     clear_scene()
     mesh = bpy.data.meshes.new(f"{name}_mesh")
@@ -1596,10 +1613,76 @@ def assert_directional_merge() -> None:
         or len(transitive_bm.edges) != 1
     ):
         raise AssertionError("Protected merge collapsed an edge through a cluster")
+
+    toward = _directional_merge_view_pair("DirectionalViewToward", -1.0, -1.05)
+    toward_stats = merge_selected_by_direction(
+        bpy.context,
+        distance=0.1,
+        strategy="VIEW_TOWARD",
+        scope="BOUNDARY",
+        skip_connected=True,
+        view_matrix=Matrix.Identity(4),
+    )
+    toward_bm = bmesh.from_edit_mesh(toward.data)
+    toward_bm.verts.ensure_lookup_table()
+    if (
+        toward_stats["merged_vertices"] != 1
+        or len(toward_bm.verts) != 1
+        or abs(toward_bm.verts[0].co.z + 1.0) > 1.0e-6
+    ):
+        raise AssertionError("View Toward merge did not keep the shallower vertex")
+
+    away = _directional_merge_view_pair("DirectionalViewAway", -1.0, -1.05)
+    away_stats = merge_selected_by_direction(
+        bpy.context,
+        distance=0.1,
+        strategy="VIEW_AWAY",
+        scope="BOUNDARY",
+        skip_connected=True,
+        view_matrix=Matrix.Identity(4),
+    )
+    away_bm = bmesh.from_edit_mesh(away.data)
+    away_bm.verts.ensure_lookup_table()
+    if (
+        away_stats["merged_vertices"] != 1
+        or len(away_bm.verts) != 1
+        or abs(away_bm.verts[0].co.z + 1.05) > 1.0e-6
+    ):
+        raise AssertionError("View Away merge did not keep the deeper vertex")
+
+    viewport = _directional_merge_view_pair(
+        "DirectionalViewOperator", -1.0, -1.05
+    )
+    screen = bpy.context.screen
+    area = next(area for area in screen.areas if area.type == "VIEW_3D")
+    region = next(region for region in area.regions if region.type == "WINDOW")
+    view_matrix = area.spaces.active.region_3d.view_matrix.copy()
+    viewport_bm = bmesh.from_edit_mesh(viewport.data)
+    expected = max(
+        viewport_bm.verts,
+        key=lambda vertex: (
+            view_matrix @ (viewport.matrix_world @ vertex.co)
+        ).z,
+    ).co.copy()
+    with bpy.context.temp_override(area=area, region=region):
+        viewport_result = bpy.ops.mesh.quad_transition_directional_merge(
+            distance=0.1,
+            strategy="VIEW_TOWARD",
+            scope="BOUNDARY",
+            skip_connected=True,
+        )
+    viewport_bm = bmesh.from_edit_mesh(viewport.data)
+    viewport_bm.verts.ensure_lookup_table()
+    if (
+        viewport_result != {"FINISHED"}
+        or len(viewport_bm.verts) != 1
+        or (viewport_bm.verts[0].co - expected).length > 1.0e-6
+    ):
+        raise AssertionError("View merge operator did not use the active viewport")
     print(
         "QT_DIRECTIONAL_MERGE_PASS radial_outer=1 radial_inner=1 "
         "normal_outer=1 normal_inner=1 protected_edge=1 allowed_collapse=1 "
-        "transitive_edge=1"
+        "transitive_edge=1 view_toward=1 view_away=1 view_operator=1"
     )
 
 
@@ -1636,7 +1719,7 @@ def main() -> None:
             "QT_BLENDER_SMOKE_PASS patterns=13 single_quad=10 rejection_cases=2 "
             "preview=1 external_projection=1 quad_flow=3 example_atlas=1 "
             "repair=6 boundary_input=2 manifold=3 directional_delete=7 "
-            "target_connector=2 detached_xray=1 directional_merge=7 "
+            "target_connector=2 detached_xray=1 directional_merge=10 "
             "connected_ribbon=2"
         )
     finally:

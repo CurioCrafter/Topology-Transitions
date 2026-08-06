@@ -32,6 +32,16 @@ STRATEGY_ITEMS = (
         "Face Normals: Keep Inside",
         "Keep the vertex farther opposite the surrounding oriented face normals",
     ),
+    (
+        "VIEW_TOWARD",
+        "View: Keep Toward You",
+        "Keep the vertex closest to the current 3D viewpoint",
+    ),
+    (
+        "VIEW_AWAY",
+        "View: Keep Away From You",
+        "Keep the deeper vertex along the current viewing direction",
+    ),
 )
 
 SCOPE_ITEMS = (
@@ -76,7 +86,12 @@ def _face_direction(obj: Any, vertices: list[Any]) -> Vector:
     return direction
 
 
-def _choose_anchor(obj: Any, vertices: list[Any], strategy: str) -> Any:
+def _choose_anchor(
+    obj: Any,
+    vertices: list[Any],
+    strategy: str,
+    view_matrix: Any | None = None,
+) -> Any:
     world_positions = {vertex: obj.matrix_world @ vertex.co for vertex in vertices}
     if strategy.startswith("RADIAL"):
         center = obj.matrix_world.translation
@@ -84,7 +99,7 @@ def _choose_anchor(obj: Any, vertices: list[Any], strategy: str) -> Any:
             vertex: (position - center).length_squared
             for vertex, position in world_positions.items()
         }
-    else:
+    elif strategy.startswith("NORMAL"):
         center = sum(world_positions.values(), Vector()) / len(vertices)
         direction = _face_direction(obj, vertices)
         if direction.length_squared <= 1.0e-16:
@@ -98,7 +113,16 @@ def _choose_anchor(obj: Any, vertices: list[Any], strategy: str) -> Any:
                 vertex: (position - center).dot(direction)
                 for vertex, position in world_positions.items()
             }
-    if strategy.endswith("OUTER"):
+    else:
+        if view_matrix is None:
+            raise DirectionalMergeError(
+                "Run View merge strategies from an active 3D View"
+            )
+        scores = {
+            vertex: (view_matrix @ position).z
+            for vertex, position in world_positions.items()
+        }
+    if strategy in {"RADIAL_OUTER", "NORMAL_OUTER", "VIEW_TOWARD"}:
         return max(vertices, key=lambda vertex: (scores[vertex], -vertex.index))
     return min(vertices, key=lambda vertex: (scores[vertex], vertex.index))
 
@@ -170,6 +194,7 @@ def merge_selected_by_direction(
     strategy: str,
     scope: str,
     skip_connected: bool,
+    view_matrix: Any | None = None,
 ) -> dict[str, int]:
     obj = context.edit_object
     if obj is None or obj.type != "MESH" or obj.mode != "EDIT":
@@ -204,7 +229,7 @@ def merge_selected_by_direction(
     targetmap: dict[Any, Any] = {}
     anchors: list[Any] = []
     for cluster in clusters:
-        anchor = _choose_anchor(obj, cluster, strategy)
+        anchor = _choose_anchor(obj, cluster, strategy, view_matrix)
         anchors.append(anchor)
         targetmap.update(
             {vertex: anchor for vertex in cluster if vertex is not anchor}
@@ -263,12 +288,21 @@ class QT_OT_directional_merge(Operator):
 
     def execute(self, context: Any):
         try:
+            view_matrix = None
+            if self.strategy.startswith("VIEW"):
+                region_data = getattr(context, "region_data", None)
+                if region_data is None:
+                    raise DirectionalMergeError(
+                        "Run View merge strategies from an active 3D View"
+                    )
+                view_matrix = region_data.view_matrix.copy()
             stats = merge_selected_by_direction(
                 context,
                 distance=self.distance,
                 strategy=self.strategy,
                 scope=self.scope,
                 skip_connected=self.skip_connected,
+                view_matrix=view_matrix,
             )
         except DirectionalMergeError as exc:
             self.report({"WARNING"}, str(exc))
@@ -289,6 +323,8 @@ def _draw_merge_menu(self: Any, _context: Any) -> None:
         ("RADIAL_INNER", "By Distance: Keep Inner"),
         ("NORMAL_OUTER", "By Face Normals: Keep Outside"),
         ("NORMAL_INNER", "By Face Normals: Keep Inside"),
+        ("VIEW_TOWARD", "By View: Keep Toward You"),
+        ("VIEW_AWAY", "By View: Keep Away From You"),
     ):
         operator = self.layout.operator(
             QT_OT_directional_merge.bl_idname,

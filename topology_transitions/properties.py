@@ -45,6 +45,16 @@ class QT_PG_settings(PropertyGroup):
                 "Face Normals: Keep Inside",
                 "Keep farther opposite surrounding face normals",
             ),
+            (
+                "VIEW_TOWARD",
+                "View: Keep Toward You",
+                "Keep closest to the current viewpoint",
+            ),
+            (
+                "VIEW_AWAY",
+                "View: Keep Away From You",
+                "Keep deeper along the current viewing direction",
+            ),
         ),
         default="RADIAL_OUTER",
     )

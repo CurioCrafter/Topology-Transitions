@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.3 - 2026-08-05
+
+- Added **View: Keep Toward You** and **View: Keep Away From You** Directional
+  Merge strategies. They choose the surviving vertex using depth in the active
+  3D viewport, including perspective, orthographic, and camera-aligned views.
+- Added quick **Toward View** and **Away From View** sidebar buttons and matching
+  entries in Blender's Edit Mode Merge menu.
+
 ## 0.7.2 - 2026-08-05
 
 - Added **Directional Merge** for selected close vertices with an explicit

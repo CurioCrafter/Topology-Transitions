@@ -258,6 +258,25 @@ class QT_PT_sidebar(Panel):
         keep_inner.strategy = "RADIAL_INNER"
         keep_inner.scope = settings.directional_merge_scope
         keep_inner.skip_connected = settings.directional_merge_skip_connected
+        row = merge.row(align=True)
+        keep_toward = row.operator(
+            "mesh.quad_transition_directional_merge",
+            text="Toward View",
+            icon="VIEW_CAMERA",
+        )
+        keep_toward.distance = settings.directional_merge_distance
+        keep_toward.strategy = "VIEW_TOWARD"
+        keep_toward.scope = settings.directional_merge_scope
+        keep_toward.skip_connected = settings.directional_merge_skip_connected
+        keep_away = row.operator(
+            "mesh.quad_transition_directional_merge",
+            text="Away From View",
+            icon="VIEW_CAMERA",
+        )
+        keep_away.distance = settings.directional_merge_distance
+        keep_away.strategy = "VIEW_AWAY"
+        keep_away.scope = settings.directional_merge_scope
+        keep_away.skip_connected = settings.directional_merge_skip_connected
         if context.mode != "EDIT_MESH":
             merge.label(text="Enter Edit Mode to merge", icon="INFO")
 

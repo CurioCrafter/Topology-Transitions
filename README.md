@@ -233,12 +233,17 @@ Merge deliberately chooses the surviving position:
 - **Face Normals: Keep Outside** keeps the point farther along the average
   orientation of its surrounding faces.
 - **Face Normals: Keep Inside** keeps the point farther against those normals.
+- **View: Keep Toward You** keeps the point closest to your current viewpoint.
+- **View: Keep Away From You** keeps the deeper point along the direction you
+  are currently looking.
 
 The default **Selected Boundary / Loose** scope targets unwelded surface seams,
 wire vertices, and isolated points. **All Selected** allows internal repair.
 **Protect Existing Edges** avoids collapsing valid short edges by default; turn
 it off when an intentional edge collapse is part of the repair. The same four
 strategies are available from Blender's Edit Mode Merge menu.
+The two view strategies read the active 3D viewport, so they follow perspective,
+orthographic, and camera-aligned views instead of using a fixed world axis.
 
 ## Main controls
 

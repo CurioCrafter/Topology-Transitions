@@ -7,7 +7,7 @@ from pathlib import Path
 
 import bmesh
 import bpy
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 TRANSITION_ROLE_LAYER = "topology_transition_role"
 TRANSITION_ROLE_ADAPTER = 1
@@ -213,6 +213,9 @@ def create_directional_merge_fixture():
 def main() -> None:
     bpy.ops.preferences.addon_enable(module="topology_transitions")
     import topology_transitions
+    from topology_transitions.directional_merge_ops import (
+        merge_selected_by_direction,
+    )
     from topology_transitions.ribbon_ops import grow_ribbon_from_stroke
     from topology_transitions.surface_ops import find_bake_cage
 
@@ -224,7 +227,7 @@ def main() -> None:
         )
     if not hasattr(bpy.types.Scene, "topology_transitions"):
         raise AssertionError("Installed add-on did not register scene settings")
-    if topology_transitions.bl_info["version"] != (0, 7, 2):
+    if topology_transitions.bl_info["version"] != (0, 7, 3):
         raise AssertionError(
             f"Installed add-on reported {topology_transitions.bl_info['version']}"
         )
@@ -390,6 +393,31 @@ def main() -> None:
     bpy.ops.object.mode_set(mode="OBJECT")
     merge_obj.hide_set(True)
 
+    view_merge = create_directional_merge_fixture()
+    view_bm = bmesh.from_edit_mesh(view_merge.data)
+    view_bm.verts.ensure_lookup_table()
+    view_bm.verts[0].co = (0.0, 0.0, -1.0)
+    view_bm.verts[1].co = (0.0, 0.0, -1.05)
+    bmesh.update_edit_mesh(view_merge.data, loop_triangles=False, destructive=False)
+    view_stats = merge_selected_by_direction(
+        bpy.context,
+        distance=0.1,
+        strategy="VIEW_TOWARD",
+        scope="BOUNDARY",
+        skip_connected=True,
+        view_matrix=Matrix.Identity(4),
+    )
+    view_bm = bmesh.from_edit_mesh(view_merge.data)
+    view_bm.verts.ensure_lookup_table()
+    if (
+        view_stats["merged_vertices"] != 1
+        or len(view_bm.verts) != 1
+        or abs(view_bm.verts[0].co.z + 1.0) > 1.0e-6
+    ):
+        raise AssertionError("Installed View Toward merge failed")
+    bpy.ops.object.mode_set(mode="OBJECT")
+    view_merge.hide_set(True)
+
     low, target = create_connected_ribbon_fixture()
     ribbon_stats = grow_ribbon_from_stroke(
         bpy.context,
@@ -439,7 +467,8 @@ def main() -> None:
         f"single_core={len(single_selected)} "
         f"example_quads=186 transitions=8 repairs=1 open_edges=4 "
         f"directional_delete=1 target_connector=1 detached_xray=1 "
-        "directional_merge=1 ribbon_quads=6 shrinkwrap=1 bake_cage=1"
+        "directional_merge=1 view_merge=1 ribbon_quads=6 shrinkwrap=1 "
+        "bake_cage=1"
     )
 
 
