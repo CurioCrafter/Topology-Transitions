@@ -541,12 +541,15 @@ def _boundary_grid(bm: Any, face: Any) -> list[Any]:
 def _analyze_bmesh(bm: Any) -> ManifoldReport:
     bm.verts.ensure_lookup_table()
     bm.edges.ensure_lookup_table()
+    bm.faces.ensure_lookup_table()
     bm.verts.index_update()
     bm.edges.index_update()
+    bm.faces.index_update()
     return analyze_manifold(
         {edge.index: (edge.verts[0].index, edge.verts[1].index) for edge in bm.edges},
         {edge.index: len(edge.link_faces) for edge in bm.edges},
         (vertex.index for vertex in bm.verts),
+        {face.index: tuple(vertex.index for vertex in face.verts) for face in bm.faces},
     )
 
 
@@ -688,7 +691,7 @@ def _select_manifold_report(bm: Any, report: ManifoldReport) -> None:
         edge.select_set(True)
         for vertex in edge.verts:
             vertex.select_set(True)
-    for vertex_id in report.isolated_vertices:
+    for vertex_id in report.issue_vertex_ids:
         bm.verts[vertex_id].select_set(True)
     bm.select_mode = {"VERT", "EDGE"}
     bm.select_flush_mode()
@@ -703,12 +706,14 @@ def _update_auto_manifold_settings(
     settings.manifold_open_edge_count = len(report.open_boundary_edges)
     settings.manifold_nonmanifold_edge_count = len(report.nonmanifold_edges)
     settings.manifold_wire_edge_count = len(report.wire_edges)
+    settings.manifold_winding_edge_count = len(report.inconsistent_winding_edges)
     settings.manifold_isolated_vertex_count = len(report.isolated_vertices)
+    settings.manifold_disconnected_fan_count = len(report.disconnected_fan_vertices)
     settings.manifold_issue_count = len(report.issue_edge_ids) + len(
-        report.isolated_vertices
+        report.issue_vertex_ids
     )
     settings.manifold_current_kind = (
-        "Auto Repair: Manifold"
+        "Auto Repair: Topologically Manifold"
         if report.clean
         else f"Auto Repair: {len(report.components)} unresolved areas"
     )
@@ -1081,7 +1086,7 @@ class QT_OT_solve_all_nonmanifold(Operator):
         if stats["made_single_user"]:
             summary += "; made the active linked mesh single-user"
         if report.clean:
-            self.report({"INFO"}, f"{summary}. Mesh is manifold")
+            self.report({"INFO"}, f"{summary}. Mesh is topologically manifold")
         else:
             self.report(
                 {"WARNING"},

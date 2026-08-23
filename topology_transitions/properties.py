@@ -571,11 +571,17 @@ class QT_PG_settings(PropertyGroup):
     manifold_component_index: IntProperty(name="Current Issue", min=0, default=0)
     manifold_open_edge_count: IntProperty(name="Open Edges", min=0, default=0)
     manifold_nonmanifold_edge_count: IntProperty(
-        name="Non-Manifold Edges", min=0, default=0
+        name="Over-Connected Edges", min=0, default=0
     )
     manifold_wire_edge_count: IntProperty(name="Wire Edges", min=0, default=0)
+    manifold_winding_edge_count: IntProperty(
+        name="Inconsistent Winding Edges", min=0, default=0
+    )
     manifold_isolated_vertex_count: IntProperty(
         name="Isolated Vertices", min=0, default=0
+    )
+    manifold_disconnected_fan_count: IntProperty(
+        name="Disconnected Face-Fan Vertices", min=0, default=0
     )
     manifold_current_kind: StringProperty(
         name="Current Issue Type", default="Not checked"

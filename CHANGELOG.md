@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.9.3 - 2026-08-23
+
+- Promoted **Mesh Integrity** to the first sidebar section and made the
+  non-topology-changing **Find Holes / Check Manifold** diagnostic its primary
+  action.
+- Expanded the checker to catch inconsistent two-face edge winding and
+  disconnected incident face fans, including closed shells that touch at only
+  one vertex, instead of reporting those cases as clean.
+- Moved automatic non-manifold repair below the diagnostic and labeled it as a
+  topology-changing option so inspection remains the default first step.
+- Reworked the README to lead with hole-rim, open-boundary, wire-edge,
+  over-connected-edge, and isolated-vertex inspection, while documenting that
+  intentional open retopology sheets are reported rather than assumed broken.
+
 ## 0.9.2 - 2026-08-19
 
 - Fixed Automatic/Custom optimization stopping with "Candidate batch changed

@@ -1,20 +1,47 @@
 # Topology Transitions
 
-Topology Transitions is a Blender add-on for building guided all-quad loop
-reductions/expansions, automatically closing non-manifold areas with quads,
-repairing selected triangles and n-gons, reading broad quad-flow regions,
-preparing shrinkwrapped retopology for selected-to-active baking, and optionally
-drawing welded boundary-grown quad sheets.
+Topology Transitions is led by **Find Holes / Check Manifold**, a focused
+topological mesh-integrity check for finding open boundaries (including hole
+rims), invalid edge face counts or winding, disconnected face fans, and loose
+geometry. It selects the exact problem elements and lets you step through each
+connected issue in the 3D View.
+
+The add-on also builds guided all-quad loop reductions and expansions, repairs
+supported topology defects, reads broad quad-flow regions, prepares
+shrinkwrapped retopology for selected-to-active baking, and optionally draws
+welded boundary-grown quad sheets.
 
 Supported transition directions are 5 -> 3, 3 -> 5, 3 -> 1, 1 -> 3,
 4 -> 2, 2 -> 4, 1 -> 2, and 2 -> 1. Pole placement, mirroring, surface
 conformity, relaxation, and Catmull-Clark preview remain user-controlled.
 
-![True unequal-density transition atlas](docs/images/05-example-plane-strip.png)
+## Start Here: Find Holes and Check Manifold Issues
+
+In Edit Mode, run **Find Holes / Check Manifold**, the first tool in the
+sidebar. It selects:
+
+- open boundary edges, including the rims of holes;
+- over-connected edges shared by more than two faces;
+- two-face edges whose adjacent faces have inconsistent winding;
+- wire edges with no linked faces;
+- isolated vertices; and
+- vertices whose incident faces split into disconnected fans.
+
+**Previous Issue** and **Next Issue** isolate and frame one connected problem
+area at a time. A clean result means none of those tracked topological issue
+classes were found. Open boundaries can be intentional, such as the outside of
+a retopology sheet, so the check reports them without assuming every boundary
+needs repair. This is a topology check; it does not test geometric
+self-intersections.
+
+For supported automatic fixes, use **Auto Solve All Non-Manifold Areas** below
+the diagnostic. That action changes topology; its safeguards and limits are
+described under [Automatic Non-Manifold Repair](#automatic-non-manifold-repair).
 
 ## Install
 
-1. Download `topology-transitions-<version>.zip` from GitHub Releases.
+1. Download `topology-transitions-<version>.zip` from
+   [GitHub Releases](https://github.com/CurioCrafter/Topology-Transitions/releases/latest).
 2. In Blender 4.2 or newer, open **Edit -> Preferences -> Get Extensions**.
 3. Open the top-right menu, choose **Install from Disk**, and select the ZIP.
 4. Open **3D View -> Sidebar -> Quad Transition**.
@@ -223,6 +250,8 @@ The atlas is a joined, 186-face all-quad mesh with all eight transition
 directions. It is meant to make density reduction/expansion visually obvious,
 not to place a transition inside a same-count rectangular grid.
 
+![True unequal-density transition atlas](docs/images/05-example-plane-strip.png)
+
 ## Quad Flow Regions
 
 The default **Quad Flow Regions** mode reads the retopology as broad patches:
@@ -248,7 +277,7 @@ useful, but it is no longer presented as the whole retopology flow map.
 
 ![Individual one-quad-wide face band mode](docs/images/03-edge-flow-scroll.png)
 
-## Mesh Integrity
+## Automatic Non-Manifold Repair
 
 With one active mesh in Object or Edit Mode, **Auto Solve All Non-Manifold
 Areas** runs the complete safe repair portfolio:
@@ -274,6 +303,10 @@ left unchanged and selected, with the unresolved count shown in the panel.
 That is an explicit safety boundary rather than a claim that every malformed or
 self-intersecting input has one correct automatic repair.
 
+Inconsistent face winding and disconnected face-fan vertices are diagnostic
+results, not automatic-repair targets. They remain selected for an explicit
+normal-orientation or topology decision instead of being changed by guesswork.
+
 The solver rejects shape-key meshes and limits one propagated repair to 10,000
 faces. In Object Mode it makes the active object single-user before committing
 when its mesh data is linked; linked data in Edit Mode is rejected with guidance
@@ -281,19 +314,8 @@ to switch modes. New loops inherit material and smooth settings, but start with
 default UV and color-attribute values, so those data need inspection after a
 topology change.
 
-In Edit Mode, **Check & Select Manifold Issues** identifies and selects the
-exact elements responsible for:
-
-- open boundary edges (one linked face);
-- over-connected non-manifold edges (more than two linked faces);
-- wire edges (no linked faces); and
-- isolated vertices.
-
-Issue edges are grouped into connected areas. **Previous Issue** and **Next
-Issue** select one component at a time and frame it in the 3D View. A closed
-manifold mesh reports zero issues. An intentional open retopology sheet is still
-reported accurately as an open boundary; the tool diagnoses rather than assumes
-that every boundary is a mistake.
+For the non-topology-changing diagnostic and issue navigation workflow, see
+[Start Here: Find Holes and Check Manifold Issues](#start-here-find-holes-and-check-manifold-issues).
 
 ## Directional Face Delete
 

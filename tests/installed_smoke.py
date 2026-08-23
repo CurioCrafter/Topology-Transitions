@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import tomllib
 from pathlib import Path
 
 import bmesh
@@ -264,9 +265,14 @@ def main() -> None:
         )
     if not hasattr(bpy.types.Scene, "topology_transitions"):
         raise AssertionError("Installed add-on did not register scene settings")
-    if topology_transitions.bl_info["version"] != (0, 9, 2):
+    manifest = tomllib.loads(
+        (expected_root / "blender_manifest.toml").read_text(encoding="utf-8")
+    )
+    expected_version = tuple(int(part) for part in manifest["version"].split("."))
+    if topology_transitions.bl_info["version"] != expected_version:
         raise AssertionError(
-            f"Installed add-on reported {topology_transitions.bl_info['version']}"
+            f"Installed add-on reported {topology_transitions.bl_info['version']}; "
+            f"manifest expects {expected_version}"
         )
 
     obj = create_patch()

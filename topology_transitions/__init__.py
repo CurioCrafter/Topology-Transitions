@@ -5,10 +5,10 @@ from __future__ import annotations
 bl_info = {
     "name": "Topology Transitions",
     "author": "CurioCrafter",
-    "version": (0, 9, 2),
+    "version": (0, 9, 3),
     "blender": (4, 2, 0),
     "location": "View3D > Sidebar > Quad Transition",
-    "description": "Build, repair, and inspect guided quad topology flows",
+    "description": "Find manifold issues; repair and optimize guided quad topology",
     "category": "Mesh",
     "doc_url": "https://github.com/CurioCrafter/Topology-Transitions",
     "tracker_url": "https://github.com/CurioCrafter/Topology-Transitions/issues",

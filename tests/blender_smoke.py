@@ -1026,6 +1026,68 @@ def assert_manifold_diagnostics() -> None:
     if result != {"FINISHED"} or settings.manifold_nonmanifold_edge_count != 1:
         raise AssertionError("Three-face shared edge was not pinpointed")
 
+    tetra_vertices = (
+        (0, 0, 0),
+        (1, 0, 0),
+        (0, 1, 0),
+        (0, 0, 1),
+    )
+    create_custom_mesh(
+        "inconsistent_winding",
+        tetra_vertices,
+        (
+            (0, 2, 1),
+            (3, 1, 0),
+            (1, 2, 3),
+            (2, 0, 3),
+        ),
+    )
+    result = bpy.ops.mesh.quad_transition_check_manifold()
+    bm = bmesh.from_edit_mesh(bpy.context.edit_object.data)
+    selected_edges = [edge for edge in bm.edges if edge.select]
+    if (
+        result != {"FINISHED"}
+        or settings.manifold_winding_edge_count != 3
+        or settings.manifold_open_edge_count != 0
+        or len(selected_edges) != 3
+    ):
+        raise AssertionError("Reversed tetra face did not expose three winding edges")
+
+    create_custom_mesh(
+        "touching_closed_shells",
+        (
+            (0, 0, 0),
+            (1, 0, 0),
+            (0, 1, 0),
+            (0, 0, 1),
+            (-1, 0, 0),
+            (0, -1, 0),
+            (0, 0, -1),
+        ),
+        (
+            (0, 2, 1),
+            (0, 1, 3),
+            (1, 2, 3),
+            (2, 0, 3),
+            (0, 5, 4),
+            (0, 4, 6),
+            (4, 5, 6),
+            (5, 0, 6),
+        ),
+    )
+    result = bpy.ops.mesh.quad_transition_check_manifold()
+    bm = bmesh.from_edit_mesh(bpy.context.edit_object.data)
+    selected_vertices = [vertex.index for vertex in bm.verts if vertex.select]
+    if (
+        result != {"FINISHED"}
+        or settings.manifold_disconnected_fan_count != 1
+        or settings.manifold_issue_count != 1
+        or selected_vertices != [0]
+    ):
+        raise AssertionError(
+            "Touching closed shells did not expose their shared vertex"
+        )
+
     clear_scene()
     bpy.ops.mesh.primitive_cube_add()
     bpy.ops.object.mode_set(mode="EDIT")
@@ -1034,7 +1096,8 @@ def assert_manifold_diagnostics() -> None:
         raise AssertionError("Closed cube did not report as manifold")
     print(
         "QT_MANIFOLD_PASS open_plane_edges=4 open_components=1 "
-        "over_connected_edges=1 closed_cube_issues=0"
+        "over_connected_edges=1 winding_edges=3 disconnected_fans=1 "
+        "closed_cube_issues=0"
     )
 
 
@@ -2340,7 +2403,7 @@ def main() -> None:
         print(
             "QT_BLENDER_SMOKE_PASS patterns=13 single_quad=10 rejection_cases=2 "
             "preview=1 external_projection=1 quad_flow=3 example_atlas=1 "
-            "repair=6 boundary_input=2 manifold=3 auto_manifold=6 optimize=9 "
+            "repair=6 boundary_input=2 manifold=5 auto_manifold=6 optimize=9 "
             "directional_delete=7 "
             "target_connector=2 detached_xray=1 directional_merge=12 "
             "connected_ribbon=2"

@@ -25,12 +25,15 @@ def _report_from_context(context: Any) -> tuple[Any, Any, Any, ManifoldReport]:
     bm = bmesh.from_edit_mesh(obj.data)
     bm.verts.ensure_lookup_table()
     bm.edges.ensure_lookup_table()
+    bm.faces.ensure_lookup_table()
     bm.verts.index_update()
     bm.edges.index_update()
+    bm.faces.index_update()
     report = analyze_manifold(
         {edge.index: (edge.verts[0].index, edge.verts[1].index) for edge in bm.edges},
         {edge.index: len(edge.link_faces) for edge in bm.edges},
         (vertex.index for vertex in bm.verts),
+        {face.index: tuple(vertex.index for vertex in face.verts) for face in bm.faces},
     )
     return obj, obj.data, bm, report
 
@@ -41,9 +44,11 @@ def _update_settings(settings: Any, obj: Any, report: ManifoldReport) -> None:
     settings.manifold_open_edge_count = len(report.open_boundary_edges)
     settings.manifold_nonmanifold_edge_count = len(report.nonmanifold_edges)
     settings.manifold_wire_edge_count = len(report.wire_edges)
+    settings.manifold_winding_edge_count = len(report.inconsistent_winding_edges)
     settings.manifold_isolated_vertex_count = len(report.isolated_vertices)
+    settings.manifold_disconnected_fan_count = len(report.disconnected_fan_vertices)
     settings.manifold_issue_count = len(report.issue_edge_ids) + len(
-        report.isolated_vertices
+        report.issue_vertex_ids
     )
 
 
@@ -82,8 +87,11 @@ def _focus_selected(context: Any) -> None:
 
 class QT_OT_check_manifold(Operator):
     bl_idname = "mesh.quad_transition_check_manifold"
-    bl_label = "Check Manifold"
-    bl_description = "Find and select every exact open or non-manifold mesh element"
+    bl_label = "Find Holes / Check Manifold"
+    bl_description = (
+        "Find holes, invalid edge counts or winding, disconnected face fans, "
+        "and loose geometry"
+    )
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
@@ -104,15 +112,15 @@ class QT_OT_check_manifold(Operator):
         _update_settings(settings, obj, report)
         settings.manifold_component_index = 0
         if report.clean:
-            settings.manifold_current_kind = "Manifold: no issues"
-            self.report({"INFO"}, "Mesh is manifold: no open or over-connected edges")
+            settings.manifold_current_kind = "No topology issues found"
+            self.report({"INFO"}, "Mesh is topologically manifold")
             return {"FINISHED"}
         _select_issue(
             context,
             mesh,
             bm,
             set(report.issue_edge_ids),
-            set(report.isolated_vertices),
+            set(report.issue_vertex_ids),
         )
         settings.manifold_current_kind = "All Issues"
         _focus_selected(context)
@@ -120,7 +128,9 @@ class QT_OT_check_manifold(Operator):
             {"WARNING"},
             f"Found {len(report.components)} issue areas: "
             f"{len(report.open_boundary_edges)} open, "
-            f"{len(report.nonmanifold_edges)} over-connected edges",
+            f"{len(report.nonmanifold_edges)} over-connected, "
+            f"{len(report.inconsistent_winding_edges)} winding, "
+            f"{len(report.disconnected_fan_vertices)} vertex-fan issues",
         )
         return {"FINISHED"}
 
@@ -147,8 +157,8 @@ class QT_OT_manifold_step(Operator):
         same_object = settings.manifold_object_name == obj.name
         _update_settings(settings, obj, report)
         if report.clean:
-            settings.manifold_current_kind = "Manifold: no issues"
-            self.report({"INFO"}, "Mesh is manifold")
+            settings.manifold_current_kind = "No topology issues found"
+            self.report({"INFO"}, "Mesh is topologically manifold")
             return {"FINISHED"}
         if same_object:
             current = min(settings.manifold_component_index, len(report.components) - 1)
@@ -169,7 +179,7 @@ class QT_OT_manifold_step(Operator):
         self.report(
             {"WARNING"},
             f"Issue {index + 1}/{len(report.components)}: {component.kind}, "
-            f"{len(component.edge_ids)} edges",
+            f"{len(component.edge_ids)} edges, {len(component.vertex_ids)} vertices",
         )
         return {"FINISHED"}
 

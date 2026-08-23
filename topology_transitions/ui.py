@@ -25,6 +25,60 @@ def _copy_operator_settings(
         )
 
 
+def _draw_mesh_integrity(layout, settings, *, edit_mode: bool) -> None:
+    integrity = layout.box()
+    integrity.label(text="Mesh Integrity - Start Here")
+    integrity.label(text="Find holes and topological manifold defects")
+    integrity.operator(
+        "mesh.quad_transition_check_manifold",
+        text="Find Holes / Check Manifold",
+        icon="SHADING_WIRE",
+    )
+    if not edit_mode:
+        integrity.label(text="Enter Edit Mode to inspect", icon="INFO")
+    row = integrity.row(align=True)
+    previous_issue = row.operator(
+        "mesh.quad_transition_manifold_step",
+        text="Previous Issue",
+        icon="TRIA_LEFT",
+    )
+    previous_issue.direction = -1
+    next_issue = row.operator(
+        "mesh.quad_transition_manifold_step",
+        text="Next Issue",
+        icon="TRIA_RIGHT",
+    )
+    next_issue.direction = 1
+    if settings.manifold_object_name:
+        integrity.label(
+            text=f"{settings.manifold_component_count} areas, "
+            f"{settings.manifold_issue_count} issue elements"
+        )
+        integrity.label(
+            text=f"Open {settings.manifold_open_edge_count} | "
+            f"Over-connected {settings.manifold_nonmanifold_edge_count}"
+        )
+        integrity.label(
+            text=f"Winding {settings.manifold_winding_edge_count} | "
+            f"Vertex fans {settings.manifold_disconnected_fan_count}"
+        )
+        integrity.label(
+            text=f"Wire {settings.manifold_wire_edge_count} | "
+            f"Isolated {settings.manifold_isolated_vertex_count}"
+        )
+        integrity.label(text=settings.manifold_current_kind)
+
+    integrity.separator()
+    integrity.label(text="Optional repair - changes topology")
+    integrity.operator(
+        "mesh.quad_transition_solve_all_nonmanifold",
+        text="Auto Solve All Non-Manifold Areas",
+        icon="MOD_REMESH",
+    )
+    integrity.label(text="Even holes use the quickest quad fan")
+    integrity.label(text="Triangular holes become three quad flows")
+
+
 class QT_PT_sidebar(Panel):
     bl_label = "Topology Transitions"
     bl_idname = "QT_PT_sidebar"
@@ -39,6 +93,12 @@ class QT_PT_sidebar(Panel):
     def draw(self, context):
         layout = self.layout
         settings = context.scene.topology_transitions
+
+        _draw_mesh_integrity(
+            layout,
+            settings,
+            edit_mode=context.mode == "EDIT_MESH",
+        )
 
         surface = layout.box()
         surface.label(text="Surface Conform & Bake Preview")
@@ -233,45 +293,6 @@ class QT_PT_sidebar(Panel):
             )
             optimize.label(text=settings.optimize_status, icon="INFO")
             optimize.label(text=settings.optimize_diagnostic)
-
-        integrity = layout.box()
-        integrity.label(text="Mesh Integrity")
-        integrity.operator(
-            "mesh.quad_transition_solve_all_nonmanifold",
-            text="Auto Solve All Non-Manifold Areas",
-            icon="MOD_REMESH",
-        )
-        integrity.label(text="Even holes use the quickest quad fan")
-        integrity.label(text="Triangular holes become three quad flows")
-        integrity.separator()
-        integrity.operator(
-            "mesh.quad_transition_check_manifold",
-            text="Check & Select Manifold Issues",
-            icon="SHADING_WIRE",
-        )
-        row = integrity.row(align=True)
-        previous_issue = row.operator(
-            "mesh.quad_transition_manifold_step",
-            text="Previous Issue",
-            icon="TRIA_LEFT",
-        )
-        previous_issue.direction = -1
-        next_issue = row.operator(
-            "mesh.quad_transition_manifold_step",
-            text="Next Issue",
-            icon="TRIA_RIGHT",
-        )
-        next_issue.direction = 1
-        if settings.manifold_object_name:
-            integrity.label(
-                text=f"{settings.manifold_component_count} areas, "
-                f"{settings.manifold_issue_count} issue elements"
-            )
-            integrity.label(
-                text=f"Open {settings.manifold_open_edge_count} | "
-                f"Over-connected {settings.manifold_nonmanifold_edge_count}"
-            )
-            integrity.label(text=settings.manifold_current_kind)
 
         detached = layout.box()
         detached.label(text="Detached Face X-Ray")
