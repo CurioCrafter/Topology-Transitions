@@ -21,6 +21,144 @@ def _mesh_object_poll(_self, obj: Object) -> bool:
 
 
 class QT_PG_settings(PropertyGroup):
+    optimize_sensitivity: EnumProperty(
+        name="Detection Mode",
+        description=(
+            "How readily complete quad flows qualify; Automatic starts cautious "
+            "and relaxes only when no safe flow is found"
+        ),
+        items=(
+            (
+                "AUTO",
+                "Automatic",
+                "Try Conservative, then Balanced, then Aggressive detection",
+            ),
+            (
+                "CONSERVATIVE",
+                "Conservative",
+                "Protect open boundaries and keep a guard ring around branches",
+            ),
+            (
+                "BALANCED",
+                "Balanced",
+                "Allow straight boundary-to-boundary reduction with moderate limits",
+            ),
+            (
+                "AGGRESSIVE",
+                "Aggressive",
+                "Use wider curvature and error limits while retaining hard features",
+            ),
+            (
+                "CUSTOM",
+                "Custom",
+                "Use the detailed thresholds and boundary setting below",
+            ),
+        ),
+        default="AUTO",
+    )
+    optimize_scope: EnumProperty(
+        name="Optimization Scope",
+        items=(
+            ("ALL", "All Visible Quads", "Optimize every eligible visible edge flow"),
+            (
+                "SELECTED",
+                "Selected Faces",
+                "Only optimize loops whose adjacent faces are all selected",
+            ),
+        ),
+        default="ALL",
+    )
+    optimize_cycles: IntProperty(
+        name="Optimization Cycles",
+        description="Re-analyze and remove another alternating set of quad flows",
+        min=1,
+        max=8,
+        default=1,
+    )
+    optimize_max_face_angle: FloatProperty(
+        name="Max Surface Angle",
+        description="Largest dihedral angle allowed across a removable flow",
+        min=0.0,
+        max=90.0,
+        default=8.0,
+        precision=2,
+    )
+    optimize_feature_angle: FloatProperty(
+        name="Crease Angle",
+        description="Treat edges at or above this angle as protected crease flows",
+        min=0.0,
+        max=180.0,
+        default=30.0,
+        precision=2,
+    )
+    optimize_max_error_percent: FloatProperty(
+        name="Max Surface Error %",
+        description=(
+            "Maximum removed-point distance as a percentage of local edge length"
+        ),
+        min=0.0,
+        max=25.0,
+        default=2.5,
+        precision=3,
+    )
+    optimize_branch_guard_rings: IntProperty(
+        name="Branch Guard Rings",
+        description="Quad rings kept around poles, corners, and feature junctions",
+        min=0,
+        max=10,
+        default=1,
+    )
+    optimize_min_loop_edges: IntProperty(
+        name="Minimum Flow Length",
+        description="Ignore short edge flows that offer little useful reduction",
+        min=2,
+        max=10000,
+        default=4,
+    )
+    optimize_preserve_boundaries: BoolProperty(
+        name="Preserve Open Boundaries",
+        description="Do not simplify flows that terminate on an open mesh boundary",
+        default=True,
+    )
+    optimize_preserve_seams: BoolProperty(
+        name="Preserve UV Seams",
+        description="Do not dissolve UV seam flows; continue straight seam crossings",
+        default=True,
+    )
+    optimize_preserve_sharp: BoolProperty(
+        name="Preserve Sharp Edges",
+        description="Do not dissolve marked-sharp flows",
+        default=True,
+    )
+    optimize_preserve_creases: BoolProperty(
+        name="Preserve Creases",
+        description="Keep crease-weighted and high-dihedral feature flows",
+        default=True,
+    )
+    optimize_preserve_materials: BoolProperty(
+        name="Preserve Materials",
+        description="Do not dissolve edge flows that separate face materials",
+        default=True,
+    )
+    optimize_show_help: BoolProperty(
+        name="Explain Controls",
+        description="Show a plain-language guide for every optimization term",
+        default=False,
+    )
+    optimize_object_name: StringProperty(name="Optimized Object", default="")
+    optimize_candidate_loops: IntProperty(name="Candidate Flows", min=0, default=0)
+    optimize_dissolved_loops: IntProperty(name="Dissolved Flows", min=0, default=0)
+    optimize_completed_cycles: IntProperty(name="Completed Cycles", min=0, default=0)
+    optimize_removed_faces: IntProperty(name="Removed Faces", min=0, default=0)
+    optimize_max_measured_error: FloatProperty(
+        name="Measured Surface Error", min=0.0, default=0.0, precision=6
+    )
+    optimize_effective_mode: StringProperty(name="Mode Used", default="None")
+    optimize_diagnostic: StringProperty(
+        name="Optimization Diagnostic",
+        default="Not analyzed",
+    )
+    optimize_status: StringProperty(name="Optimization Status", default="Not analyzed")
     directional_merge_distance: FloatProperty(
         name="Merge Distance",
         description="Maximum world-space distance between selected vertices",
@@ -78,6 +216,14 @@ class QT_PG_settings(PropertyGroup):
     directional_merge_force_pair: BoolProperty(
         name="Always Merge Exact Pair",
         description="Ignore distance when exactly two eligible vertices are selected",
+        default=True,
+    )
+    directional_merge_protect_uvs: BoolProperty(
+        name="Protect UVs",
+        description=(
+            "Preserve every surviving attached face-corner UV; on a collapsed "
+            "edge, keep the chosen anchor's UV for that face"
+        ),
         default=True,
     )
     loose_xray_opacity: FloatProperty(

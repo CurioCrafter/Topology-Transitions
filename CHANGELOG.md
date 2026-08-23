@@ -1,5 +1,92 @@
 # Changelog
 
+## 0.9.2 - 2026-08-19
+
+- Fixed Automatic/Custom optimization stopping with "Candidate batch changed
+  the mesh topology class" when one candidate or an interaction made an
+  otherwise useful batch unsafe.
+- A failed full batch is now divided into progressively smaller candidate
+  groups and tested transactionally, up to 64 attempts. The largest proven-safe
+  subset is committed while topology-conflicting flows are deferred for a later
+  cycle instead of discarding every valid flow.
+- Topology rejections now identify the protected signature that would have
+  changed: Euler characteristic, boundary-component count, over-connected
+  edges, wire edges, or isolated vertices.
+- Added factory coverage proving a forced boundary-component batch conflict is
+  isolated, still reduces faces, and leaves only non-degenerate quads.
+
+## 0.9.1 - 2026-08-19
+
+- Replaced the overly strict default quad-flow detection with **Automatic**
+  sensitivity. It tries Conservative, Balanced, then Aggressive safety presets,
+  allowing common straight open remesh sheets to optimize without manually
+  discovering that boundary protection was blocking every flow.
+- Added direct Conservative, Balanced, Aggressive, and Custom modes. Explicit
+  UV seams, Sharp marks, weighted creases, and material borders remain
+  independently protected while geometric angle/error, guard-ring, flow-length,
+  and open-boundary thresholds respond to the chosen sensitivity.
+- Replaced the generic "No eligible repetitive quad flows" result with ranked
+  rejection diagnostics for boundary protection, short or pole-interrupted
+  flows, selected scope, features, curvature, surface error, and unsafe
+  topology.
+- Added an in-panel **Explain Every Control** guide, effective-mode reporting,
+  full terminology documentation, and Blender coverage proving that Automatic
+  escalates from a boundary-blocked Conservative scan to a successful Balanced
+  64-to-16 quad reduction.
+
+## 0.9.0 - 2026-08-19
+
+- Added **Quad Flow Optimization** for removing repetitive remesher density
+  without producing triangles or n-gons. It discovers complete topological edge
+  flows and dissolves an alternating, non-adjacent set in both quad directions,
+  so a regular 2x2 block can become one larger quad.
+- Added adjustable cycles, surface-angle and crease-angle thresholds, local
+  surface-error percentage, branch guard rings, minimum flow length, All
+  Visible/Selected Faces scope, and protection for open boundaries, UV seams,
+  marked-sharp edges, crease weights, and material boundaries.
+- Straight feature crossings retain seam, sharp, crease, and linear UV data
+  while feature junctions, poles, corners, strongly curved flows, and failed
+  error-budget trials remain dense. Every accepted pass stays all-quad,
+  preserves Euler/boundary/non-manifold signatures, and passes a bounded BVH
+  surface-distance check before commit.
+- Added **Analyze / Select Flows** plus persistent result counters. Factory
+  Blender coverage proves two-cycle 64-to-4 quad reduction, flat-versus-curved
+  regional behavior, feature/UV retention, and a closed 384-to-150 quad
+  reduction with branch corners and manifold topology intact. Regular
+  path/cycle conflict groups use an exact alternating solver; a 4,096-quad
+  grid reduces to 1,024 quads in one cycle instead of retaining an index-order
+  strip.
+
+## 0.8.0 - 2026-08-19
+
+- Added **Auto Solve All Non-Manifold Areas** in Object and Edit Mode. One pass
+  cleans over-connected exact duplicate faces, wire edges, and isolated
+  vertices, then closes every simple open boundary it can solve safely.
+- Even boundary loops prefer the clean minimum-face quad fan. Odd or unsuitable
+  loops use a conforming center grid and carry their midpoint cuts through
+  opposite edges of surrounding quad flows instead of creating T-junctions or
+  moving an n-gon into a neighbor.
+- Triangular holes become exactly three target quads around a new center. The
+  operation is copy-staged, limited to 10,000 propagated faces per boundary,
+  and leaves ambiguous branched boundaries or over-connected sheets selected
+  with an unresolved count instead of deleting an arbitrary surface.
+- Added pure boundary-loop planning tests plus factory and installed-copy
+  Blender coverage for minimum quad closure, triangle-to-three-quad closure,
+  loose cleanup, and conservative unresolved selection.
+
+## 0.7.5 - 2026-08-05
+
+- Added default-on **Protect UVs** to Directional Merge. It tracks UVs by
+  stable face-corner data across Blender's destructive weld instead of using
+  invalidated loop references or shifted loop indices.
+- Fixed connected edge collapses choosing a UV corner from face winding rather
+  than the requested merge anchor. Collapsing faces now keep their own anchor
+  corner, while source-only and anchor-only attached faces retain their
+  distinct per-face UVs and seams.
+- Protection covers every UV map plus UV pins and the UV-selection state
+  exposed by the running Blender version. The temporary tracking layer is
+  removed before the edit mesh is updated.
+
 ## 0.7.4 - 2026-08-05
 
 - Fixed Directional Merge appearing to ignore valid selections. It now defaults

@@ -22,6 +22,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import topology_transitions  # noqa: E402
+from topology_transitions import optimize_ops  # noqa: E402
 from topology_transitions.directional_merge_ops import (  # noqa: E402
     DirectionalMergeError,
     merge_selected_by_direction,
@@ -1037,6 +1038,419 @@ def assert_manifold_diagnostics() -> None:
     )
 
 
+def assert_auto_nonmanifold_solver() -> None:
+    clear_scene()
+    bpy.ops.mesh.primitive_cube_add(size=2.0)
+    cube = bpy.context.active_object
+    bpy.ops.object.mode_set(mode="EDIT")
+    bm = bmesh.from_edit_mesh(cube.data)
+    top = max(bm.faces, key=lambda face: face.calc_center_median().z)
+    bmesh.ops.delete(bm, geom=[top], context="FACES_ONLY")
+    bmesh.update_edit_mesh(cube.data, loop_triangles=True, destructive=True)
+    result = bpy.ops.mesh.quad_transition_solve_all_nonmanifold()
+    bm = bmesh.from_edit_mesh(cube.data)
+    if (
+        result != {"FINISHED"}
+        or len(bm.faces) != 6
+        or any(len(face.verts) != 4 for face in bm.faces)
+        or any(len(edge.link_faces) != 2 for edge in bm.edges)
+    ):
+        raise AssertionError("Four-edge cube hole did not take the one-quad path")
+    bpy.ops.object.mode_set(mode="OBJECT")
+
+    tetra = create_custom_mesh(
+        "triangular_hole",
+        ((0, 0, 0), (2, 0, 0), (0, 2, 0), (0, 0, 2)),
+        ((0, 3, 1), (1, 3, 2), (2, 3, 0)),
+    )
+    bpy.ops.object.mode_set(mode="OBJECT")
+    result = bpy.ops.mesh.quad_transition_solve_all_nonmanifold()
+    bm = bmesh.new()
+    bm.from_mesh(tetra.data)
+    try:
+        hole_center = min(
+            bm.verts,
+            key=lambda vertex: (vertex.co - Vector((2 / 3, 2 / 3, 0))).length,
+        )
+        center_faces = list(hole_center.link_faces)
+        if (
+            result != {"FINISHED"}
+            or len(bm.faces) != 12
+            or len(center_faces) != 3
+            or any(len(face.verts) != 4 for face in bm.faces)
+            or any(len(edge.link_faces) != 2 for edge in bm.edges)
+        ):
+            raise AssertionError(
+                "Triangular hole did not become three conforming quad flows"
+            )
+    finally:
+        bm.free()
+
+    duplicate = create_custom_mesh(
+        "duplicate_cube_face",
+        (
+            (-1, -1, -1),
+            (1, -1, -1),
+            (1, 1, -1),
+            (-1, 1, -1),
+            (-1, -1, 1),
+            (1, -1, 1),
+            (1, 1, 1),
+            (-1, 1, 1),
+        ),
+        (
+            (0, 3, 2, 1),
+            (4, 5, 6, 7),
+            (0, 1, 5, 4),
+            (1, 2, 6, 5),
+            (2, 3, 7, 6),
+            (3, 0, 4, 7),
+            (4, 5, 6, 7),
+        ),
+    )
+    bpy.ops.object.mode_set(mode="OBJECT")
+    result = bpy.ops.mesh.quad_transition_solve_all_nonmanifold()
+    bm = bmesh.new()
+    bm.from_mesh(duplicate.data)
+    try:
+        if (
+            result != {"FINISHED"}
+            or len(bm.faces) != 6
+            or any(len(edge.link_faces) != 2 for edge in bm.edges)
+        ):
+            raise AssertionError("Over-connected exact duplicate face was not removed")
+    finally:
+        bm.free()
+
+    clear_scene()
+    bpy.ops.mesh.primitive_cube_add(size=2.0)
+    linked_source = bpy.context.active_object
+    bpy.ops.object.mode_set(mode="EDIT")
+    bm = bmesh.from_edit_mesh(linked_source.data)
+    top = max(bm.faces, key=lambda face: face.calc_center_median().z)
+    bmesh.ops.delete(bm, geom=[top], context="FACES_ONLY")
+    bmesh.update_edit_mesh(linked_source.data, loop_triangles=True, destructive=True)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    linked_copy = bpy.data.objects.new("LinkedUnchanged", linked_source.data)
+    bpy.context.collection.objects.link(linked_copy)
+    linked_copy.select_set(False)
+    bpy.context.view_layer.objects.active = linked_source
+    result = bpy.ops.mesh.quad_transition_solve_all_nonmanifold()
+    if (
+        result != {"FINISHED"}
+        or linked_source.data == linked_copy.data
+        or len(linked_source.data.polygons) != 6
+        or len(linked_copy.data.polygons) != 5
+    ):
+        raise AssertionError("Object Mode repair changed an unselected linked mesh")
+
+    clear_scene()
+    bpy.ops.mesh.primitive_cube_add(size=2.0)
+    loose = bpy.context.active_object
+    bm = bmesh.new()
+    bm.from_mesh(loose.data)
+    first = bm.verts.new((3.0, 0.0, 0.0))
+    second = bm.verts.new((4.0, 0.0, 0.0))
+    bm.edges.new((first, second))
+    bm.verts.new((5.0, 0.0, 0.0))
+    bm.to_mesh(loose.data)
+    bm.free()
+    result = bpy.ops.mesh.quad_transition_solve_all_nonmanifold()
+    if (
+        result != {"FINISHED"}
+        or len(loose.data.vertices) != 8
+        or len(loose.data.edges) != 12
+        or len(loose.data.polygons) != 6
+    ):
+        raise AssertionError("Loose wire and isolated vertex cleanup failed")
+
+    unresolved = create_custom_mesh(
+        "ambiguous_over_connected",
+        (
+            (0, 0, 0),
+            (1, 0, 0),
+            (0, 1, 0),
+            (0, -1, 0),
+            (0.5, 0, 1),
+        ),
+        ((0, 1, 2), (1, 0, 3), (0, 1, 4)),
+    )
+    result = bpy.ops.mesh.quad_transition_solve_all_nonmanifold()
+    settings = bpy.context.scene.topology_transitions
+    bm = bmesh.from_edit_mesh(unresolved.data)
+    if (
+        result != {"FINISHED"}
+        or settings.manifold_nonmanifold_edge_count != 1
+        or not any(edge.select for edge in bm.edges if len(edge.link_faces) > 2)
+    ):
+        raise AssertionError("Ambiguous over-connected sheet was not retained/selected")
+    print(
+        "QT_AUTO_MANIFOLD_PASS cube_hole_quads=1 triangle_hole_quads=3 "
+        "tetra_total_quads=12 duplicate_removed=1 linked_safe=1 "
+        "loose_removed=3 ambiguous_selected=1"
+    )
+
+
+def assert_quad_flow_optimization() -> None:
+    clear_scene()
+    auto_obj, _columns, _rows = create_grid("optimize_auto", 8, 8)
+    settings = bpy.context.scene.topology_transitions
+    settings.optimize_sensitivity = "CONSERVATIVE"
+    settings.optimize_scope = "ALL"
+    settings.optimize_cycles = 1
+    conservative = bpy.ops.mesh.quad_transition_analyze_optimization()
+    conservative_bm = bmesh.from_edit_mesh(auto_obj.data)
+    if (
+        conservative != {"FINISHED"}
+        or settings.optimize_candidate_loops != 0
+        or "boundar" not in settings.optimize_diagnostic.lower()
+        or sum(face.select for face in conservative_bm.faces) != 64
+    ):
+        raise AssertionError("Conservative diagnostics did not explain blocked flows")
+    settings.optimize_sensitivity = "AUTO"
+    automatic = bpy.ops.mesh.quad_transition_optimize_flows()
+    auto_bm = bmesh.from_edit_mesh(auto_obj.data)
+    if (
+        automatic != {"FINISHED"}
+        or len(auto_bm.faces) != 16
+        or settings.optimize_effective_mode != "Balanced"
+        or any(len(face.verts) != 4 for face in auto_bm.faces)
+    ):
+        raise AssertionError("Automatic sensitivity did not relax to Balanced")
+
+    clear_scene()
+    obj, _columns, _rows = create_grid("optimize_regular", 8, 8)
+    bm = bmesh.from_edit_mesh(obj.data)
+    crease_layer = bm.edges.layers.float.get("crease_edge")
+    if crease_layer is None:
+        crease_layer = bm.edges.layers.float.new("crease_edge")
+    uv_layer = bm.loops.layers.uv.get("UVMap")
+    if uv_layer is None:
+        uv_layer = bm.loops.layers.uv.new("UVMap")
+    for face in bm.faces:
+        for loop in face.loops:
+            loop[uv_layer].uv = (loop.vert.co.x / 8.0, loop.vert.co.y / 8.0)
+    feature_edges = [
+        edge
+        for edge in bm.edges
+        if all(abs(vertex.co.y - 4.0) < 1.0e-6 for vertex in edge.verts)
+    ]
+    for edge in feature_edges:
+        edge.seam = True
+        edge.smooth = False
+        edge[crease_layer] = 0.75
+    bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=False)
+
+    settings.optimize_sensitivity = "CUSTOM"
+    settings.optimize_scope = "SELECTED"
+    settings.optimize_cycles = 2
+    settings.optimize_max_face_angle = 1.0
+    settings.optimize_feature_angle = 20.0
+    settings.optimize_max_error_percent = 0.1
+    settings.optimize_branch_guard_rings = 0
+    settings.optimize_min_loop_edges = 4
+    settings.optimize_preserve_boundaries = False
+    settings.optimize_preserve_seams = True
+    settings.optimize_preserve_sharp = True
+    settings.optimize_preserve_creases = True
+    settings.optimize_preserve_materials = True
+
+    analyze = bpy.ops.mesh.quad_transition_analyze_optimization()
+    if (
+        analyze != {"FINISHED"}
+        or settings.optimize_candidate_loops < 1
+        or settings.optimize_dissolved_loops < 1
+    ):
+        raise AssertionError("Quad optimization analysis found no regular flows")
+
+    result = bpy.ops.mesh.quad_transition_optimize_flows()
+    bm = bmesh.from_edit_mesh(obj.data)
+    crease_layer = bm.edges.layers.float.get("crease_edge")
+    uv_layer = bm.loops.layers.uv.get("UVMap")
+    preserved = [
+        edge
+        for edge in bm.edges
+        if edge.seam
+        and not edge.smooth
+        and crease_layer is not None
+        and edge[crease_layer] >= 0.74
+    ]
+    uv_error = max(
+        (
+            loop[uv_layer].uv
+            - Vector((loop.vert.co.x / 8.0, loop.vert.co.y / 8.0))
+        ).length
+        for face in bm.faces
+        for loop in face.loops
+    )
+    if (
+        result != {"FINISHED"}
+        or len(bm.faces) != 4
+        or any(len(face.verts) != 4 for face in bm.faces)
+        or len(preserved) != 2
+        or settings.optimize_completed_cycles != 2
+        or settings.optimize_removed_faces != 60
+        or settings.optimize_max_measured_error > 1.0e-6
+        or uv_error > 1.0e-6
+        or bm.faces.layers.int.get("__topology_optimize_scope__") is not None
+    ):
+        raise AssertionError(
+            "Two-cycle feature-aware optimization did not reduce 64 quads to 4"
+        )
+
+    vertices = []
+    faces = []
+    for region in range(2):
+        offset = len(vertices)
+        for y in range(5):
+            for x in range(5):
+                z = (
+                    0.0
+                    if region == 0
+                    else 0.35 * ((x - 2.0) ** 2 + (y - 2.0) ** 2)
+                )
+                vertices.append((float(x + region * 8), float(y), z))
+        for y in range(4):
+            for x in range(4):
+                first = offset + y * 5 + x
+                faces.append((first, first + 1, first + 6, first + 5))
+    mixed = create_custom_mesh("optimize_flat_and_curved", vertices, faces)
+    settings.optimize_scope = "ALL"
+    settings.optimize_cycles = 1
+    settings.optimize_max_face_angle = 0.1
+    settings.optimize_max_error_percent = 0.01
+    result = bpy.ops.mesh.quad_transition_optimize_flows()
+    bm = bmesh.from_edit_mesh(mixed.data)
+    curved_faces = [face for face in bm.faces if face.calc_center_median().x > 6.0]
+    if (
+        result != {"FINISHED"}
+        or len(bm.faces) != 20
+        or len(curved_faces) != 16
+        or any(len(face.verts) != 4 for face in bm.faces)
+    ):
+        raise AssertionError(
+            "Optimizer did not simplify the flat region while retaining curvature"
+        )
+
+    clear_scene()
+    bpy.ops.mesh.primitive_cube_add(size=2.0)
+    closed = bpy.context.active_object
+    bpy.ops.object.mode_set(mode="EDIT")
+    bm = bmesh.from_edit_mesh(closed.data)
+    original_corners = {
+        tuple(round(value, 6) for value in vertex.co) for vertex in bm.verts
+    }
+    bmesh.ops.subdivide_edges(
+        bm,
+        edges=list(bm.edges),
+        cuts=7,
+        use_grid_fill=True,
+    )
+    bmesh.update_edit_mesh(closed.data, loop_triangles=True, destructive=True)
+    dense_faces = len(bm.faces)
+    settings.optimize_cycles = 1
+    settings.optimize_max_face_angle = 1.0
+    settings.optimize_feature_angle = 20.0
+    settings.optimize_max_error_percent = 0.1
+    settings.optimize_branch_guard_rings = 1
+    settings.optimize_preserve_boundaries = True
+    result = bpy.ops.mesh.quad_transition_optimize_flows()
+    bm = bmesh.from_edit_mesh(closed.data)
+    remaining_coordinates = {
+        tuple(round(value, 6) for value in vertex.co) for vertex in bm.verts
+    }
+    if (
+        result != {"FINISHED"}
+        or len(bm.faces) >= dense_faces
+        or any(len(face.verts) != 4 for face in bm.faces)
+        or any(len(edge.link_faces) != 2 for edge in bm.edges)
+        or not original_corners <= remaining_coordinates
+    ):
+        raise AssertionError(
+            "Closed optimization did not preserve branch corners and manifold quads"
+        )
+    closed_faces_after = len(bm.faces)
+
+    clear_scene()
+    dense, _columns, _rows = create_grid("optimize_dense", 64, 64)
+    settings.optimize_scope = "ALL"
+    settings.optimize_cycles = 1
+    settings.optimize_branch_guard_rings = 0
+    settings.optimize_preserve_boundaries = False
+    result = bpy.ops.mesh.quad_transition_optimize_flows()
+    bm = bmesh.from_edit_mesh(dense.data)
+    if (
+        result != {"FINISHED"}
+        or len(bm.faces) != 1024
+        or any(len(face.verts) != 4 for face in bm.faces)
+    ):
+        raise AssertionError("Dense 4,096-quad optimization did not reach 1,024")
+
+    clear_scene()
+    isolated, _columns, _rows = create_grid("optimize_batch_isolation", 8, 8)
+    original_apply_batch = optimize_ops._apply_candidate_batch
+
+    def reject_large_batch(test_bm, candidates, selected_ids, options):
+        if len(selected_ids) > 2:
+            raise optimize_ops.QuadOptimizeError(
+                "Candidate batch changed protected topology "
+                "(boundary components 1->2)"
+            )
+        return original_apply_batch(test_bm, candidates, selected_ids, options)
+
+    optimize_ops._apply_candidate_batch = reject_large_batch
+    try:
+        result = bpy.ops.mesh.quad_transition_optimize_flows()
+    finally:
+        optimize_ops._apply_candidate_batch = original_apply_batch
+    bm = bmesh.from_edit_mesh(isolated.data)
+    if (
+        result != {"FINISHED"}
+        or not 0 < len(bm.faces) < 64
+        or any(len(face.verts) != 4 for face in bm.faces)
+        or "batch isolation" not in settings.optimize_status.lower()
+        or "boundary components 1->2" not in settings.optimize_diagnostic
+    ):
+        raise AssertionError("Rejected candidate batch was not safely isolated")
+
+    clear_scene()
+    linked_source, _columns, _rows = create_grid("optimize_linked", 4, 4)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    linked_copy = bpy.data.objects.new("OptimizeLinkedUnchanged", linked_source.data)
+    bpy.context.collection.objects.link(linked_copy)
+    linked_copy.select_set(False)
+    bpy.context.view_layer.objects.active = linked_source
+    result = bpy.ops.mesh.quad_transition_optimize_flows()
+    if (
+        result != {"FINISHED"}
+        or linked_source.data == linked_copy.data
+        or len(linked_source.data.polygons) != 4
+        or len(linked_copy.data.polygons) != 16
+    ):
+        raise AssertionError("Object Mode optimization changed linked mesh data")
+
+    clear_scene()
+    shape_key_obj, _columns, _rows = create_grid("optimize_shape_key", 4, 4)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    shape_key_obj.shape_key_add(name="Basis")
+    try:
+        result = bpy.ops.mesh.quad_transition_optimize_flows()
+    except RuntimeError as exc:
+        if "shape keys" not in str(exc):
+            raise
+        result = {"CANCELLED"}
+    if result != {"CANCELLED"} or len(shape_key_obj.data.polygons) != 16:
+        raise AssertionError("Shape-key optimization was not rejected unchanged")
+    print(
+        "QT_QUAD_OPTIMIZE_PASS auto=Balanced auto_faces=64->16 diagnostics=boundary "
+        "cycles=2 faces=64->4 feature_edges=8->2 "
+        f"flat_region=16->4 curved_region=16->16 "
+        f"closed={dense_faces}->{closed_faces_after} dense=4096->1024 "
+        f"uv_error={uv_error:.3g} batch_isolation=1 linked_safe=1 "
+        "shape_key_reject=1 all_quad=1"
+    )
+
+
 def assert_connected_ribbon_growth() -> None:
     lanes = 5
     segments = 4
@@ -1502,6 +1916,123 @@ def _directional_merge_normal_fixture(name: str):
     return obj
 
 
+def _directional_merge_uv_fixture(name: str):
+    clear_scene()
+    mesh = bpy.data.meshes.new(f"{name}_mesh")
+    mesh.from_pydata(
+        (
+            (0.00, 0.00, 0.00),
+            (0.01, 0.00, 0.00),
+            (1.00, 0.00, 0.00),
+            (1.00, 1.00, 0.00),
+            (0.00, 1.00, 0.00),
+            (-1.00, 1.00, 0.00),
+            (-1.00, 0.00, 0.00),
+        ),
+        (),
+        (
+            (0, 1, 3, 4),
+            (1, 2, 3),
+            (0, 4, 5, 6),
+        ),
+    )
+    mesh.uv_layers.new(name="UVMap")
+    mesh.uv_layers.new(name="DetailUV")
+    mesh.uv_layers.active_index = 1
+    mesh.update()
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.collection.objects.link(obj)
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+    bpy.ops.object.mode_set(mode="EDIT")
+
+    bm = bmesh.from_edit_mesh(mesh)
+    bm.verts.ensure_lookup_table()
+    bm.faces.ensure_lookup_table()
+    face_id_name = "qt_uv_guard_test_face"
+    bm.faces.layers.int.new(face_id_name)
+    face_id_layer = bm.faces.layers.int.get(face_id_name)
+    uv_layers = {
+        name: bm.loops.layers.uv.get(name) for name in ("UVMap", "DetailUV")
+    }
+    primary_values = (
+        ((0.10, 0.10), (0.90, 0.90), (0.80, 0.80), (0.20, 0.20)),
+        ((0.91, 0.91), (0.70, 0.90), (0.70, 0.70)),
+        ((0.11, 0.11), (0.30, 0.10), (0.30, 0.30), (0.10, 0.30)),
+    )
+    expected: dict[int, dict[tuple[float, float, float], dict[str, tuple]]] = {}
+    loop_number = 0
+    for face_index, face in enumerate(bm.faces):
+        face_id = face_index + 100
+        face[face_id_layer] = face_id
+        expected_groups: dict[
+            tuple[float, float, float], list[tuple[int, dict[str, tuple]]]
+        ] = {}
+        for ordinal, loop in enumerate(face.loops):
+            primary = primary_values[face_index][ordinal]
+            detail = (primary[0] * 0.37 + 0.13, primary[1] * 0.41 + 0.07)
+            states: dict[str, tuple] = {}
+            for layer_index, (uv_name, uv_layer) in enumerate(uv_layers.items()):
+                loop_uv = loop[uv_layer]
+                loop_uv.uv = primary if layer_index == 0 else detail
+                if hasattr(loop_uv, "select"):
+                    loop_uv.select = (loop_number + layer_index) % 2 == 0
+                if hasattr(loop_uv, "select_edge"):
+                    loop_uv.select_edge = (loop_number + layer_index) % 3 == 0
+                loop_uv.pin_uv = (loop_number + layer_index) % 4 == 0
+                states[uv_name] = (
+                    tuple(loop_uv.uv),
+                    (
+                        bool(loop_uv.select)
+                        if hasattr(loop_uv, "select")
+                        else None
+                    ),
+                    (
+                        bool(loop_uv.select_edge)
+                        if hasattr(loop_uv, "select_edge")
+                        else None
+                    ),
+                    bool(loop_uv.pin_uv),
+                )
+            original_index = loop.vert.index
+            final_index = 0 if original_index == 1 else original_index
+            final_coordinate = tuple(
+                float(value) for value in bm.verts[final_index].co
+            )
+            expected_groups.setdefault(final_coordinate, []).append(
+                (original_index, states)
+            )
+            loop_number += 1
+        expected[face_id] = {}
+        for coordinate, entries in expected_groups.items():
+            anchor = next((entry for entry in entries if entry[0] == 0), None)
+            expected[face_id][coordinate] = (anchor or entries[0])[1]
+
+    for vertex in bm.verts:
+        vertex.select_set(vertex.index in {0, 1})
+    bm.select_mode = {"VERT"}
+    bpy.context.tool_settings.mesh_select_mode = (True, False, False)
+    bmesh.update_edit_mesh(mesh, loop_triangles=False, destructive=False)
+    return obj, face_id_name, expected
+
+
+def _uv_loop_state(loop, uv_layers) -> dict[str, tuple]:
+    result = {}
+    for name, layer in uv_layers.items():
+        loop_uv = loop[layer]
+        result[name] = (
+            tuple(loop_uv.uv),
+            bool(loop_uv.select) if hasattr(loop_uv, "select") else None,
+            (
+                bool(loop_uv.select_edge)
+                if hasattr(loop_uv, "select_edge")
+                else None
+            ),
+            bool(loop_uv.pin_uv),
+        )
+    return result
+
+
 def assert_directional_merge() -> None:
     explicit = _directional_merge_pair("DirectionalExplicitPair", 0.5, 1.5)
     explicit_result = bpy.ops.mesh.quad_transition_directional_merge(
@@ -1607,6 +2138,58 @@ def assert_directional_merge() -> None:
     protected_bm = bmesh.from_edit_mesh(protected.data)
     if collapse_result != {"FINISHED"} or len(protected_bm.verts) != 1:
         raise AssertionError("Directional merge could not allow an edge collapse")
+
+    uv_obj, face_id_name, expected_uvs = _directional_merge_uv_fixture(
+        "DirectionalProtectedUVs"
+    )
+    uv_stats = merge_selected_by_direction(
+        bpy.context,
+        distance=0.1,
+        strategy="RADIAL_INNER",
+        scope="ALL_SELECTED",
+        skip_connected=False,
+        protect_uvs=True,
+    )
+    uv_bm = bmesh.from_edit_mesh(uv_obj.data)
+    face_id_layer = uv_bm.faces.layers.int.get(face_id_name)
+    uv_layers = {
+        name: uv_bm.loops.layers.uv.get(name) for name in ("UVMap", "DetailUV")
+    }
+    actual_uvs = {}
+    for face in uv_bm.faces:
+        face_id = int(face[face_id_layer])
+        actual_uvs[face_id] = {
+            tuple(float(value) for value in loop.vert.co): _uv_loop_state(
+                loop, uv_layers
+            )
+            for loop in face.loops
+        }
+    leaked_layers = [
+        name
+        for name in uv_bm.loops.layers.int.keys()
+        if name.startswith("_qt_directional_merge_uv_guard")
+    ]
+    if (
+        actual_uvs != expected_uvs
+        or uv_stats["uv_layers_protected"] != 2
+        or uv_stats["uv_loops_restored"] != 20
+        or uv_stats["uv_loops_removed"] != 2
+        or leaked_layers
+        or tuple(uv_obj.data.uv_layers.keys()) != ("UVMap", "DetailUV")
+        or uv_obj.data.uv_layers.active_index != 1
+    ):
+        raise AssertionError(
+            "Protect UVs changed an attached face corner or leaked its guard layer: "
+            f"stats={uv_stats} leaked={leaked_layers} "
+            f"expected={expected_uvs} actual={actual_uvs}"
+        )
+
+    if not bpy.context.scene.topology_transitions.directional_merge_protect_uvs:
+        raise AssertionError("Protect UVs scene setting is not default-on")
+    merge_rna = bpy.ops.mesh.quad_transition_directional_merge.get_rna_type()
+    protect_rna = merge_rna.properties["protect_uvs"]
+    if not protect_rna.default:
+        raise AssertionError("Protect UVs operator setting is not default-on")
 
     transitive = _directional_merge_pair("DirectionalTransitive", 0.0, 0.005)
     transitive_bm = bmesh.from_edit_mesh(transitive.data)
@@ -1717,7 +2300,8 @@ def assert_directional_merge() -> None:
     print(
         "QT_DIRECTIONAL_MERGE_PASS explicit_pair=1 radial_outer=1 radial_inner=1 "
         "normal_outer=1 normal_inner=1 protected_edge=1 allowed_collapse=1 "
-        "transitive_edge=1 view_toward=1 view_away=1 view_operator=1 "
+        "protected_uv_maps=2 protected_uv_values=20 transitive_edge=1 "
+        "view_toward=1 view_away=1 view_operator=1 "
         "nearest_diagnostic=1"
     )
 
@@ -1742,6 +2326,8 @@ def main() -> None:
         assert_repair_operators()
         assert_mixed_and_edge_boundary_transition_inputs()
         assert_manifold_diagnostics()
+        assert_auto_nonmanifold_solver()
+        assert_quad_flow_optimization()
         assert_directional_face_delete()
         assert_target_mesh_connector()
         assert_detached_face_xray()
@@ -1754,7 +2340,8 @@ def main() -> None:
         print(
             "QT_BLENDER_SMOKE_PASS patterns=13 single_quad=10 rejection_cases=2 "
             "preview=1 external_projection=1 quad_flow=3 example_atlas=1 "
-            "repair=6 boundary_input=2 manifold=3 directional_delete=7 "
+            "repair=6 boundary_input=2 manifold=3 auto_manifold=6 optimize=9 "
+            "directional_delete=7 "
             "target_connector=2 detached_xray=1 directional_merge=12 "
             "connected_ribbon=2"
         )

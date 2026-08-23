@@ -8,16 +8,19 @@ problem from being pushed into a neighbouring face.
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 
 import bmesh
 import bpy
+from bpy.props import BoolProperty, IntProperty
 from bpy.types import Operator
 from mathutils import Vector
 
 from .core import TransitionError
 from .edit_mesh import restore_bmesh
+from .manifold import ManifoldReport, analyze_manifold, boundary_components
 from .quad_repair import Quad, best_quad_fan, quad_fan_quality
 
 
@@ -42,6 +45,7 @@ class PropagatedFace:
     reference_normal: Vector
     material_index: int
     smooth: bool
+    hidden: bool
     target: bool
 
 
@@ -249,13 +253,16 @@ def _opposite_edge(face: Any, edge: Any) -> Any:
 
 
 def _propagation_faces(
-    seeds: list[Any], *, maximum_faces: int = MAX_PROPAGATED_FACES
+    seeds: list[Any],
+    *,
+    maximum_faces: int = MAX_PROPAGATED_FACES,
+    allow_hidden: bool = False,
 ) -> tuple[list[PropagatedFace], set[Any]]:
     """Trace all edge splits needed to absorb ``seeds`` into an all-quad mesh."""
 
     targets = set(seeds)
     marked_edges = {edge for face in seeds for edge in face.edges}
-    queue = list(marked_edges)
+    queue = sorted(marked_edges, key=lambda edge: edge.index, reverse=True)
     touched_quads: set[Any] = set()
     visited_edges: set[Any] = set()
 
@@ -271,7 +278,7 @@ def _propagation_faces(
         for face in tuple(edge.link_faces):
             if face in targets:
                 continue
-            if face.hide:
+            if face.hide and not allow_hidden:
                 raise TransitionError(
                     "Propagated repair reached hidden geometry; reveal it first"
                 )
@@ -296,7 +303,7 @@ def _propagation_faces(
 
     affected = targets | touched_quads
     records = []
-    for face in affected:
+    for face in sorted(affected, key=lambda item: item.index):
         if not face.is_valid:
             raise TransitionError("A propagated repair face became invalid")
         loops = tuple(face.loops)
@@ -312,6 +319,7 @@ def _propagation_faces(
                 reference_normal=normal,
                 material_index=face.material_index,
                 smooth=face.smooth,
+                hidden=face.hide,
                 target=face in targets,
             )
         )
@@ -354,10 +362,20 @@ def _cycle_between(values: list[Any], start: int, end: int) -> list[Any]:
     return result
 
 
-def _propagated_grid(bm: Any, seeds: list[Any]) -> tuple[list[Any], int, int]:
+def _propagated_grid(
+    bm: Any,
+    seeds: list[Any],
+    *,
+    maximum_faces: int = MAX_PROPAGATED_FACES,
+    allow_hidden: bool = False,
+) -> tuple[list[Any], int, int]:
     """Repair arbitrary visible non-quads by carrying splits through quad rings."""
 
-    records, marked_edges = _propagation_faces(seeds)
+    records, marked_edges = _propagation_faces(
+        seeds,
+        maximum_faces=maximum_faces,
+        allow_hidden=allow_hidden,
+    )
     midpoint_by_edge = {}
     for edge in sorted(marked_edges, key=lambda item: item.index):
         if not edge.is_valid:
@@ -371,6 +389,7 @@ def _propagated_grid(bm: Any, seeds: list[Any]) -> tuple[list[Any], int, int]:
         context="FACES_ONLY",
     )
     created = []
+    created_normals = []
     for record in records:
         marked_indices = [
             index for index, edge in enumerate(record.edges) if edge in midpoint_by_edge
@@ -416,12 +435,17 @@ def _propagated_grid(bm: Any, seeds: list[Any]) -> tuple[list[Any], int, int]:
             )
             quad.material_index = record.material_index
             quad.smooth = record.smooth
+            quad.hide_set(record.hidden)
             created.append(quad)
+            created_normals.append((quad, record.reference_normal))
 
     bm.normal_update()
     if any(
-        not face.is_valid or len(face.verts) != 4 or face.calc_area() <= 1.0e-12
-        for face in created
+        not face.is_valid
+        or len(face.verts) != 4
+        or face.calc_area() <= 1.0e-12
+        or face.normal.dot(reference_normal) <= 1.0e-8
+        for face, reference_normal in created_normals
     ):
         raise TransitionError(
             "Propagated repair generated a zero-area or non-quad face"
@@ -512,6 +536,343 @@ def _boundary_grid(bm: Any, face: Any) -> list[Any]:
     ):
         raise TransitionError("Boundary center-grid fallback generated a bad quad")
     return created
+
+
+def _analyze_bmesh(bm: Any) -> ManifoldReport:
+    bm.verts.ensure_lookup_table()
+    bm.edges.ensure_lookup_table()
+    bm.verts.index_update()
+    bm.edges.index_update()
+    return analyze_manifold(
+        {edge.index: (edge.verts[0].index, edge.verts[1].index) for edge in bm.edges},
+        {edge.index: len(edge.link_faces) for edge in bm.edges},
+        (vertex.index for vertex in bm.verts),
+    )
+
+
+def _boundary_components_from_bmesh(bm: Any):
+    bm.verts.ensure_lookup_table()
+    bm.edges.ensure_lookup_table()
+    bm.verts.index_update()
+    bm.edges.index_update()
+    edge_vertices = {
+        edge.index: (edge.verts[0].index, edge.verts[1].index) for edge in bm.edges
+    }
+    return boundary_components(
+        edge_vertices,
+        (edge.index for edge in bm.edges if len(edge.link_faces) == 1),
+    )
+
+
+def _remove_overconnected_duplicate_faces(bm: Any) -> int:
+    """Remove only exact duplicate faces that cause over-connected edges."""
+
+    bm.verts.ensure_lookup_table()
+    bm.faces.ensure_lookup_table()
+    bm.verts.index_update()
+    bm.faces.index_update()
+    groups: dict[tuple[int, ...], list[Any]] = {}
+    for face in bm.faces:
+        key = tuple(sorted(vertex.index for vertex in face.verts))
+        groups.setdefault(key, []).append(face)
+
+    duplicates = []
+    for faces in groups.values():
+        if len(faces) < 2 or not any(
+            len(edge.link_faces) > 2 for face in faces for edge in face.edges
+        ):
+            continue
+        ordered = sorted(faces, key=lambda face: face.index)
+        duplicates.extend(ordered[1:])
+    if duplicates:
+        bmesh.ops.delete(bm, geom=duplicates, context="FACES_ONLY")
+    return len(duplicates)
+
+
+def _remove_loose_geometry(bm: Any) -> tuple[int, int]:
+    wire_edges = [edge for edge in bm.edges if not edge.link_faces]
+    if wire_edges:
+        bmesh.ops.delete(bm, geom=wire_edges, context="EDGES")
+    isolated_vertices = [vertex for vertex in bm.verts if not vertex.link_edges]
+    if isolated_vertices:
+        bmesh.ops.delete(bm, geom=isolated_vertices, context="VERTS")
+    return len(wire_edges), len(isolated_vertices)
+
+
+def _boundary_cycle_vertices(bm: Any, component: Any) -> list[Any]:
+    bm.verts.ensure_lookup_table()
+    bm.edges.ensure_lookup_table()
+    vertices = [bm.verts[index] for index in component.vertex_ids]
+    first_edge = bm.edges[component.edge_ids[0]]
+    adjacent_face = first_edge.link_faces[0]
+    adjacent_loop = next(
+        loop for loop in adjacent_face.loops if loop.edge == first_edge
+    )
+    adjacent_direction = (
+        adjacent_loop.vert.index,
+        adjacent_loop.link_loop_next.vert.index,
+    )
+    cycle_direction = (vertices[0].index, vertices[1].index)
+    if cycle_direction == adjacent_direction:
+        vertices.reverse()
+    return vertices
+
+
+def _close_boundary_component(
+    bm: Any,
+    component: Any,
+    *,
+    prefer_minimal: bool,
+    maximum_faces: int,
+) -> dict[str, int | str]:
+    if not component.closed or len(component.vertex_ids) < 3:
+        raise TransitionError("Boundary component is not one simple closed loop")
+    edges = [bm.edges[index] for index in component.edge_ids]
+    if any(not edge.is_valid or len(edge.link_faces) != 1 for edge in edges):
+        raise TransitionError("Boundary loop changed before it could be repaired")
+    neighboring_faces = {edge.link_faces[0] for edge in edges}
+    if len(neighboring_faces) == 1:
+        raise TransitionError(
+            "A one-face open sheet cannot be capped without duplicating that face"
+        )
+
+    cycle = _boundary_cycle_vertices(bm, component)
+    styles = Counter(
+        (face.material_index, face.smooth)
+        for face in sorted(neighboring_faces, key=lambda item: item.index)
+    )
+    style = min(styles, key=lambda item: (-styles[item], item[0], item[1]))
+    cap = bm.faces.new(cycle)
+    cap.material_index, cap.smooth = style
+    bm.normal_update()
+
+    side_count = len(cycle)
+    if prefer_minimal and side_count % 2 == 0:
+        plan = _safe_plan((cap,))
+        if plan is not None:
+            created = _replace_region(bm, plan)
+            return {
+                "strategy": "minimal_fan",
+                "target_quads": len(created),
+                "created_quads": len(created),
+                "propagated_faces": 0,
+                "propagated_edges": 0,
+            }
+
+    created, propagated_faces, propagated_edges = _propagated_grid(
+        bm,
+        [cap],
+        maximum_faces=maximum_faces,
+        allow_hidden=True,
+    )
+    return {
+        "strategy": "center_grid",
+        "target_quads": side_count,
+        "created_quads": len(created),
+        "propagated_faces": propagated_faces,
+        "propagated_edges": propagated_edges,
+    }
+
+
+def _select_manifold_report(bm: Any, report: ManifoldReport) -> None:
+    bm.verts.ensure_lookup_table()
+    bm.edges.ensure_lookup_table()
+    for face in bm.faces:
+        face.select_set(False)
+    for edge in bm.edges:
+        edge.select_set(False)
+    for vertex in bm.verts:
+        vertex.select_set(False)
+    for edge_id in report.issue_edge_ids:
+        edge = bm.edges[edge_id]
+        edge.select_set(True)
+        for vertex in edge.verts:
+            vertex.select_set(True)
+    for vertex_id in report.isolated_vertices:
+        bm.verts[vertex_id].select_set(True)
+    bm.select_mode = {"VERT", "EDGE"}
+    bm.select_flush_mode()
+
+
+def _update_auto_manifold_settings(
+    settings: Any, obj: Any, report: ManifoldReport
+) -> None:
+    settings.manifold_object_name = obj.name
+    settings.manifold_component_count = len(report.components)
+    settings.manifold_component_index = 0
+    settings.manifold_open_edge_count = len(report.open_boundary_edges)
+    settings.manifold_nonmanifold_edge_count = len(report.nonmanifold_edges)
+    settings.manifold_wire_edge_count = len(report.wire_edges)
+    settings.manifold_isolated_vertex_count = len(report.isolated_vertices)
+    settings.manifold_issue_count = len(report.issue_edge_ids) + len(
+        report.isolated_vertices
+    )
+    settings.manifold_current_kind = (
+        "Auto Repair: Manifold"
+        if report.clean
+        else f"Auto Repair: {len(report.components)} unresolved areas"
+    )
+
+
+def _auto_repair_context(context: Any) -> tuple[Any, Any, Any | None, Any, bool]:
+    edit_mode = context.mode == "EDIT_MESH"
+    obj = context.edit_object if edit_mode else context.active_object
+    if obj is None or obj.type != "MESH" or obj.mode not in {"OBJECT", "EDIT"}:
+        raise TransitionError(
+            "Auto Repair requires one active mesh in Object or Edit Mode"
+        )
+    if edit_mode and len(context.objects_in_mode_unique_data) != 1:
+        raise TransitionError("Auto Repair handles one mesh data-block at a time")
+    if edit_mode and obj.data.users > 1:
+        raise TransitionError(
+            "Linked mesh data must be repaired in Object Mode so the active "
+            "object can be made single-user safely"
+        )
+    if obj.data.shape_keys is not None:
+        raise TransitionError(
+            "Meshes with shape keys are not modified because topology would change"
+        )
+
+    mesh = obj.data
+    live_bm = bmesh.from_edit_mesh(mesh) if edit_mode else None
+    if live_bm is not None:
+        working = live_bm.copy()
+    else:
+        working = bmesh.new()
+        working.from_mesh(mesh)
+    return obj, mesh, live_bm, working, edit_mode
+
+
+def solve_all_nonmanifold(
+    context: Any,
+    *,
+    prefer_minimal: bool = True,
+    remove_loose: bool = True,
+    remove_duplicate_faces: bool = True,
+    maximum_faces: int = MAX_PROPAGATED_FACES,
+) -> dict[str, Any]:
+    """Repair every safely solvable manifold defect on the active mesh.
+
+    Simple closed boundary loops are capped with the fewest clean quads possible.
+    Odd loops use a center grid; a triangular hole therefore becomes exactly three
+    target quads while its three parity cuts continue through neighboring flows.
+    Ambiguous over-connected sheets and branched boundaries remain selected.
+    """
+
+    obj, mesh, live_bm, working, edit_mode = _auto_repair_context(context)
+    stats: dict[str, Any] = {
+        "boundary_areas": 0,
+        "closed_boundaries": 0,
+        "failed_boundaries": 0,
+        "triangle_boundaries": 0,
+        "minimal_fans": 0,
+        "center_grids": 0,
+        "target_quads": 0,
+        "created_quads": 0,
+        "propagated_faces": 0,
+        "propagated_edges": 0,
+        "duplicate_faces_removed": 0,
+        "wire_edges_removed": 0,
+        "isolated_vertices_removed": 0,
+        "failures": [],
+        "made_single_user": False,
+    }
+    try:
+        if remove_duplicate_faces:
+            stats["duplicate_faces_removed"] = _remove_overconnected_duplicate_faces(
+                working
+            )
+        if remove_loose:
+            wire_count, isolated_count = _remove_loose_geometry(working)
+            stats["wire_edges_removed"] = wire_count
+            stats["isolated_vertices_removed"] = isolated_count
+
+        initial_components = _boundary_components_from_bmesh(working)
+        stats["boundary_areas"] = len(initial_components)
+        anchors = [component.vertex_ids[0] for component in initial_components]
+        for anchor in anchors:
+            current_components = _boundary_components_from_bmesh(working)
+            current = next(
+                (
+                    component
+                    for component in current_components
+                    if anchor in component.vertex_ids
+                ),
+                None,
+            )
+            if current is None:
+                continue
+            if not current.closed:
+                stats["failed_boundaries"] += 1
+                stats["failures"].append("branched or open boundary component")
+                continue
+
+            trial = working.copy()
+            try:
+                trial_component = next(
+                    component
+                    for component in _boundary_components_from_bmesh(trial)
+                    if anchor in component.vertex_ids
+                )
+                result = _close_boundary_component(
+                    trial,
+                    trial_component,
+                    prefer_minimal=prefer_minimal,
+                    maximum_faces=maximum_faces,
+                )
+            except (TransitionError, RuntimeError, ValueError, StopIteration) as exc:
+                trial.free()
+                stats["failed_boundaries"] += 1
+                stats["failures"].append(str(exc))
+                continue
+
+            working.free()
+            working = trial
+            stats["closed_boundaries"] += 1
+            stats["triangle_boundaries"] += len(current.vertex_ids) == 3
+            stats["minimal_fans"] += result["strategy"] == "minimal_fan"
+            stats["center_grids"] += result["strategy"] == "center_grid"
+            for name in (
+                "target_quads",
+                "created_quads",
+                "propagated_faces",
+                "propagated_edges",
+            ):
+                stats[name] += result[name]
+
+        working.normal_update()
+        report = _analyze_bmesh(working)
+        _select_manifold_report(working, report)
+        if edit_mode:
+            context.tool_settings.mesh_select_mode = (True, True, False)
+            restore_bmesh(mesh, live_bm, working)
+        else:
+            if mesh.users > 1:
+                output_mesh = mesh.copy()
+                try:
+                    working.to_mesh(output_mesh)
+                    output_mesh.update()
+                    obj.data = output_mesh
+                except Exception:
+                    bpy.data.meshes.remove(output_mesh)
+                    raise
+                mesh = output_mesh
+                stats["made_single_user"] = True
+            else:
+                working.to_mesh(mesh)
+                mesh.update()
+        _update_auto_manifold_settings(
+            context.scene.topology_transitions,
+            obj,
+            report,
+        )
+        stats["report"] = report
+        stats["had_custom_data"] = bool(mesh.uv_layers) or len(
+            getattr(mesh, "color_attributes", ())
+        ) > 0
+        return stats
+    finally:
+        working.free()
 
 
 def solve_selected(context: Any, target: str) -> dict[str, Any]:
@@ -634,6 +995,114 @@ def solve_selected(context: Any, target: str) -> dict[str, Any]:
     }
 
 
+class QT_OT_solve_all_nonmanifold(Operator):
+    bl_idname = "mesh.quad_transition_solve_all_nonmanifold"
+    bl_label = "Auto Solve All Non-Manifold Areas"
+    bl_description = (
+        "Close every simple open boundary with quads, clean exact duplicate and "
+        "loose geometry, and select ambiguous defects that remain"
+    )
+    bl_options = {"REGISTER", "UNDO"}
+
+    prefer_minimal: BoolProperty(
+        name="Prefer Quickest Quad Path",
+        description=(
+            "Use a minimum-face quad fan for clean even loops; odd loops use "
+            "center grids with propagated parity cuts"
+        ),
+        default=True,
+    )
+    remove_loose: BoolProperty(
+        name="Remove Loose Geometry",
+        description=(
+            "Delete wire edges and isolated vertices that cannot form a surface"
+        ),
+        default=True,
+    )
+    remove_duplicate_faces: BoolProperty(
+        name="Remove Exact Duplicate Faces",
+        description=(
+            "Remove exact coincident duplicates only when they create "
+            "over-connected edges"
+        ),
+        default=True,
+    )
+    maximum_faces: IntProperty(
+        name="Maximum Propagated Faces",
+        description="Safety limit for quad-flow cuts created by one boundary repair",
+        min=1,
+        max=100000,
+        default=MAX_PROPAGATED_FACES,
+    )
+
+    @classmethod
+    def poll(cls, context: Any) -> bool:
+        obj = (
+            context.edit_object
+            if context.mode == "EDIT_MESH"
+            else context.active_object
+        )
+        return (
+            obj is not None
+            and obj.type == "MESH"
+            and obj.mode in {"OBJECT", "EDIT"}
+        )
+
+    def execute(self, context: Any):
+        try:
+            stats = solve_all_nonmanifold(
+                context,
+                prefer_minimal=self.prefer_minimal,
+                remove_loose=self.remove_loose,
+                remove_duplicate_faces=self.remove_duplicate_faces,
+                maximum_faces=self.maximum_faces,
+            )
+        except TransitionError as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+        except Exception as exc:
+            self.report(
+                {"ERROR"},
+                f"Auto repair failed without changing the mesh: {exc}",
+            )
+            return {"CANCELLED"}
+
+        report = stats["report"]
+        cleanup_count = (
+            stats["duplicate_faces_removed"]
+            + stats["wire_edges_removed"]
+            + stats["isolated_vertices_removed"]
+        )
+        summary = (
+            f"Closed {stats['closed_boundaries']}/{stats['boundary_areas']} areas "
+            f"with {stats['target_quads']} target quads; cleaned {cleanup_count} "
+            "loose/duplicate elements"
+        )
+        if stats["made_single_user"]:
+            summary += "; made the active linked mesh single-user"
+        if report.clean:
+            self.report({"INFO"}, f"{summary}. Mesh is manifold")
+        else:
+            self.report(
+                {"WARNING"},
+                f"{summary}; {len(report.components)} ambiguous areas remain selected",
+            )
+        if stats["triangle_boundaries"]:
+            self.report(
+                {"INFO"},
+                f"Converted {stats['triangle_boundaries']} triangular boundaries "
+                "into three-quad center flows",
+            )
+        if stats["had_custom_data"] and (
+            stats["closed_boundaries"] or stats["duplicate_faces_removed"]
+        ):
+            self.report(
+                {"WARNING"},
+                "New topology uses default loop data; inspect UV and color attributes",
+            )
+        return {"FINISHED"}
+
+
 class QT_OT_solve_selected_tris(Operator):
     bl_idname = "mesh.quad_transition_solve_selected_tris"
     bl_label = "Solve Selected Tris"
@@ -701,7 +1170,11 @@ def _execute_repair(operator: Operator, context: Any, target: str):
     return {"FINISHED"}
 
 
-CLASSES = (QT_OT_solve_selected_tris, QT_OT_solve_selected_ngons)
+CLASSES = (
+    QT_OT_solve_all_nonmanifold,
+    QT_OT_solve_selected_tris,
+    QT_OT_solve_selected_ngons,
+)
 
 
 def register() -> None:

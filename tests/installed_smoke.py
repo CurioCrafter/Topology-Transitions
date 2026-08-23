@@ -210,6 +210,43 @@ def create_directional_merge_fixture():
     return obj
 
 
+def create_directional_merge_uv_fixture():
+    bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.ops.object.select_all(action="DESELECT")
+    mesh = bpy.data.meshes.new("installed_directional_merge_uv_mesh")
+    mesh.from_pydata(
+        (
+            (0.0, 0.0, 0.0),
+            (0.01, 0.0, 0.0),
+            (1.0, 0.0, 0.0),
+            (0.0, 1.0, 0.0),
+        ),
+        (),
+        ((0, 1, 2, 3),),
+    )
+    mesh.uv_layers.new(name="UVMap")
+    mesh.update()
+    obj = bpy.data.objects.new("InstalledDirectionalMergeUV", mesh)
+    bpy.context.collection.objects.link(obj)
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+    bpy.ops.object.mode_set(mode="EDIT")
+    bm = bmesh.from_edit_mesh(mesh)
+    bm.verts.ensure_lookup_table()
+    bm.faces.ensure_lookup_table()
+    uv_layer = bm.loops.layers.uv.get("UVMap")
+    values = ((0.1, 0.2), (0.9, 0.8), (0.7, 0.8), (0.2, 0.7))
+    for loop, value in zip(bm.faces[0].loops, values, strict=True):
+        loop_uv = loop[uv_layer]
+        loop_uv.uv = value
+        loop_uv.pin_uv = loop.vert.index == 0
+    for vertex in bm.verts:
+        vertex.select_set(vertex.index in {0, 1})
+    bm.select_mode = {"VERT"}
+    bpy.context.tool_settings.mesh_select_mode = (True, False, False)
+    return obj
+
+
 def main() -> None:
     bpy.ops.preferences.addon_enable(module="topology_transitions")
     import topology_transitions
@@ -227,7 +264,7 @@ def main() -> None:
         )
     if not hasattr(bpy.types.Scene, "topology_transitions"):
         raise AssertionError("Installed add-on did not register scene settings")
-    if topology_transitions.bl_info["version"] != (0, 7, 4):
+    if topology_transitions.bl_info["version"] != (0, 9, 2):
         raise AssertionError(
             f"Installed add-on reported {topology_transitions.bl_info['version']}"
         )
@@ -326,6 +363,45 @@ def main() -> None:
     bpy.ops.object.mode_set(mode="OBJECT")
     bpy.ops.object.select_all(action="SELECT")
     bpy.ops.object.delete(use_global=False)
+    optimize_mesh = bpy.data.meshes.new("installed_optimize_mesh")
+    optimize_vertices = [
+        (float(x), float(y), 0.0) for y in range(5) for x in range(5)
+    ]
+    optimize_faces = []
+    for y in range(4):
+        for x in range(4):
+            first = y * 5 + x
+            optimize_faces.append((first, first + 1, first + 6, first + 5))
+    optimize_mesh.from_pydata(optimize_vertices, (), optimize_faces)
+    optimize_mesh.update()
+    optimize_obj = bpy.data.objects.new("InstalledOptimize", optimize_mesh)
+    bpy.context.collection.objects.link(optimize_obj)
+    bpy.context.view_layer.objects.active = optimize_obj
+    optimize_obj.select_set(True)
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    settings.optimize_scope = "ALL"
+    settings.optimize_sensitivity = "AUTO"
+    settings.optimize_cycles = 1
+    settings.optimize_max_face_angle = 1.0
+    settings.optimize_feature_angle = 20.0
+    settings.optimize_max_error_percent = 0.1
+    settings.optimize_branch_guard_rings = 0
+    settings.optimize_min_loop_edges = 4
+    settings.optimize_preserve_boundaries = False
+    optimize_result = bpy.ops.mesh.quad_transition_optimize_flows()
+    optimized_bm = bmesh.from_edit_mesh(optimize_mesh)
+    if (
+        optimize_result != {"FINISHED"}
+        or len(optimized_bm.faces) != 4
+        or settings.optimize_effective_mode != "Balanced"
+        or any(len(face.verts) != 4 for face in optimized_bm.faces)
+    ):
+        raise AssertionError(f"Installed quad optimization failed: {optimize_result}")
+
+    bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.ops.object.select_all(action="SELECT")
+    bpy.ops.object.delete(use_global=False)
     bpy.ops.mesh.primitive_cube_add(size=2.0)
     cube = bpy.context.object
     delete_result = bpy.ops.object.quad_transition_delete_faces_by_axis(axis="POS_Y")
@@ -336,6 +412,21 @@ def main() -> None:
         or any(polygon.normal.y > 0.9 for polygon in cube.data.polygons)
     ):
         raise AssertionError(f"Installed directional delete failed: {delete_result}")
+    auto_repair_result = bpy.ops.mesh.quad_transition_solve_all_nonmanifold()
+    auto_bm = bmesh.new()
+    auto_bm.from_mesh(cube.data)
+    try:
+        if (
+            auto_repair_result != {"FINISHED"}
+            or len(auto_bm.faces) != 6
+            or any(len(face.verts) != 4 for face in auto_bm.faces)
+            or any(len(edge.link_faces) != 2 for edge in auto_bm.edges)
+        ):
+            raise AssertionError(
+                f"Installed auto manifold repair failed: {auto_repair_result}"
+            )
+    finally:
+        auto_bm.free()
 
     source, target = create_connector_fixture()
     connector_preview = bpy.ops.object.quad_transition_preview_target_connection(
@@ -390,6 +481,44 @@ def main() -> None:
         raise AssertionError("Installed Directional Merge failed")
     bpy.ops.object.mode_set(mode="OBJECT")
     merge_obj.hide_set(True)
+
+    uv_merge = create_directional_merge_uv_fixture()
+    uv_merge_result = bpy.ops.mesh.quad_transition_directional_merge(
+        distance=0.1,
+        strategy="RADIAL_INNER",
+        scope="ALL_SELECTED",
+        skip_connected=False,
+    )
+    uv_bm = bmesh.from_edit_mesh(uv_merge.data)
+    uv_layer = uv_bm.loops.layers.uv.get("UVMap")
+    anchor_loop = next(
+        loop
+        for face in uv_bm.faces
+        for loop in face.loops
+        if loop.vert.co.length < 1.0e-8
+    )
+    anchor_uv = anchor_loop[uv_layer]
+    leaked_uv_guards = [
+        name
+        for name in uv_bm.loops.layers.int.keys()
+        if name.startswith("_qt_directional_merge_uv_guard")
+    ]
+    merge_rna = bpy.ops.mesh.quad_transition_directional_merge.get_rna_type()
+    if (
+        uv_merge_result != {"FINISHED"}
+        or (anchor_uv.uv - Vector((0.1, 0.2))).length > 1.0e-6
+        or not anchor_uv.pin_uv
+        or leaked_uv_guards
+        or not settings.directional_merge_protect_uvs
+        or not merge_rna.properties["protect_uvs"].default
+    ):
+        raise AssertionError(
+            "Installed Protect UVs failed: "
+            f"result={uv_merge_result} uv={tuple(anchor_uv.uv)} "
+            f"pin={anchor_uv.pin_uv} leaked={leaked_uv_guards}"
+        )
+    bpy.ops.object.mode_set(mode="OBJECT")
+    uv_merge.hide_set(True)
 
     view_merge = create_directional_merge_fixture()
     view_bm = bmesh.from_edit_mesh(view_merge.data)
@@ -464,8 +593,10 @@ def main() -> None:
         f"flow_quads={strip_quads} single_quad={len(single_inserted)} "
         f"single_core={len(single_selected)} "
         f"example_quads=186 transitions=8 repairs=1 open_edges=4 "
-        f"directional_delete=1 target_connector=1 detached_xray=1 "
-        "directional_merge_pair_override=1 view_merge=1 ribbon_quads=6 shrinkwrap=1 "
+        f"directional_delete=1 auto_manifold=1 quad_optimize=auto_balanced "
+        f"target_connector=1 detached_xray=1 "
+        "directional_merge_pair_override=1 protected_uv=1 view_merge=1 "
+        "ribbon_quads=6 shrinkwrap=1 "
         "bake_cage=1"
     )
 

@@ -1,9 +1,10 @@
 # Topology Transitions
 
 Topology Transitions is a Blender add-on for building guided all-quad loop
-reductions/expansions, repairing selected triangles and n-gons, reading broad
-quad-flow regions, preparing shrinkwrapped retopology for selected-to-active
-baking, and optionally drawing welded boundary-grown quad sheets.
+reductions/expansions, automatically closing non-manifold areas with quads,
+repairing selected triangles and n-gons, reading broad quad-flow regions,
+preparing shrinkwrapped retopology for selected-to-active baking, and optionally
+drawing welded boundary-grown quad sheets.
 
 Supported transition directions are 5 -> 3, 3 -> 5, 3 -> 1, 1 -> 3,
 4 -> 2, 2 -> 4, 1 -> 2, and 2 -> 1. Pole placement, mirroring, surface
@@ -120,6 +121,96 @@ Meshes with shape keys are rejected. New loops use default custom-data values,
 so repaired regions with UVs, color attributes, custom normals, or creases may
 need those data rebuilt.
 
+## Quad Flow Optimization
+
+**Quad Flow Optimization** removes complete repetitive edge flows instead of
+running a triangle-producing decimator. A candidate flow must continue through
+ordinary quad topology, remain below the surface-angle and local error limits,
+and avoid deleting a protected feature flow. Parallel neighboring loops
+conflict, so the planner chooses an alternating set; perpendicular sets may run
+together. On a regular patch this allows each 2x2 group to become one quad.
+
+**Detection Mode** defaults to **Automatic**. Automatic tries the same mesh at
+three sensitivity levels and stops at the first level that produces a valid
+batch:
+
+- **Conservative**: 8 degree surface angle, 2.5% error, four-edge minimum,
+  one branch guard ring, and locked open boundaries;
+- **Balanced**: 18 degree surface angle, 5% error, three-edge minimum, no extra
+  guard ring, and straight boundary-to-boundary flows allowed; and
+- **Aggressive**: 35 degree surface angle, 10% error, two-edge minimum, no extra
+  guard ring, and straight boundary-to-boundary flows allowed.
+
+Explicit UV seams, marked-sharp edges, weighted creases, and material borders
+remain protected at every sensitivity level when their preservation switches
+are enabled. **Custom** exposes every numeric threshold and the open-boundary
+switch directly.
+
+### What every optimization term means
+
+- **Detection Mode** controls how readily a complete edge flow qualifies.
+  Automatic escalates only when a stricter level finds nothing.
+- **Scope** is either every visible quad on the active mesh or only complete
+  flows whose adjacent faces are selected.
+- **Optimization Cycles** re-analyzes the simplified result. One cycle roughly
+  halves eligible density; additional cycles can reduce it again.
+- **Max Surface Angle** is the largest face-to-face bend across an edge flow
+  that may be removed. A smaller value keeps more curved detail.
+- **Crease Angle** is the bend at which an ordinary geometric edge is classified
+  as a protected crease. A smaller value protects more edges.
+- **Max Surface Error %** is the allowed old-to-new surface distance, measured
+  relative to the median local edge length. A smaller value retains shape more
+  strictly.
+- **Branch Guard Rings** keeps that many surrounding quad rings dense around
+  poles, corners, and feature junctions.
+- **Minimum Flow Length** ignores complete flows shorter than this edge count.
+- **Preserve Open Boundaries** prevents density changes along the outside edge
+  of an open sheet. Balanced and Aggressive presets allow straight
+  boundary-to-boundary flows; Custom exposes this as a switch.
+- **Preserve UV Seams** retains texture-island borders.
+- **Preserve Sharp Edges** retains Blender edges marked Sharp for shading.
+- **Preserve Creases** retains weighted subdivision creases and edges above the
+  Crease Angle.
+- **Preserve Materials** retains borders between different face materials.
+- **Analyze / Select Flows** previews the alternating batch that the next cycle
+  would remove. It does not alter topology.
+- **Candidates** are complete flows that passed the current filters; **Mode
+  Used** shows the sensitivity level Automatic selected.
+
+If no flow qualifies, the panel now reports the main reasons instead of only
+showing "No eligible repetitive quad flows". Typical reasons are protected
+open boundaries, short flows, excessive surface error, high curvature, selected
+scope, or flows interrupted by poles and irregular branches.
+
+If a complete batch would change the Euler characteristic, boundary-component
+count, non-manifold state, wire edges, or isolated vertices, the optimizer does
+not disable that safety check. It automatically splits the batch into smaller
+groups, validates them on mesh copies, commits the largest proven-safe subset,
+and reports how many conflicting flows were deferred. Run another cycle to
+re-analyze those remaining areas after the safe reduction.
+
+Straight edge flows crossing a crease can still be simplified: the crease line
+is continued through the new longer edge and its seam/sharp/crease properties
+are restored. The crease itself is never selected as a removable flow. UVs on
+the tested linear grid remain unchanged; complicated UV interiors should still
+be inspected after any topology reduction.
+
+**Analyze / Select Flows** selects the next compatible batch for All Visible
+scope. With Selected Faces scope it reports the eligible batch without replacing
+the face selection, so **Optimize Quad Flow** can use that same selected region.
+
+Each topology pass runs on a copy and is accepted only if it reduces faces,
+leaves every face a non-degenerate quad, preserves the Euler and manifold/
+boundary signatures, and stays inside a bounded BVH distance sample. Curved or
+irregular regions can therefore remain dense while a disconnected flat region
+is simplified. Shape-key meshes are rejected, and linked mesh data is made
+single-user only in Object Mode.
+
+Open sheets keep their boundary density by default. Turn off **Preserve Open
+Boundaries** only when straight boundary-to-boundary flows may be simplified.
+The optimizer does not invent transition patches for partial loops: if a flow
+ends at a branch or would create a non-quad, it is left unchanged.
+
 ## True density example atlas
 
 In Object Mode, click **Add All Transition Examples**. Every labeled tile has:
@@ -159,8 +250,39 @@ useful, but it is no longer presented as the whole retopology flow map.
 
 ## Mesh Integrity
 
-In Edit Mode, **Check & Select Manifold Issues** identifies and selects the exact
-elements responsible for:
+With one active mesh in Object or Edit Mode, **Auto Solve All Non-Manifold
+Areas** runs the complete safe repair portfolio:
+
+1. exact duplicate faces are removed when they are the cause of an
+   over-connected edge;
+2. wire edges and isolated vertices are removed;
+3. every simple closed open-edge loop is filled;
+4. clean even loops use the lowest-face-count valid quad fan; and
+5. odd loops use a center grid whose required midpoint cuts continue through
+   opposite edges of neighboring quad flows.
+
+A triangular hole therefore becomes three quads around one center. Those three
+new edge flows continue through adjacent faces when parity requires it, so the
+repair remains conforming and does not leave T-junctions or push a pentagon into
+the next face. Each boundary is tried on a mesh copy, and one boundary cannot
+partially damage the working mesh if its validation fails.
+
+There is no geometry-only rule that can choose which arbitrary sheet to delete
+when three genuinely different surfaces share one edge. Branched boundaries,
+non-duplicate over-connected sheets, and one-face open sheets are therefore
+left unchanged and selected, with the unresolved count shown in the panel.
+That is an explicit safety boundary rather than a claim that every malformed or
+self-intersecting input has one correct automatic repair.
+
+The solver rejects shape-key meshes and limits one propagated repair to 10,000
+faces. In Object Mode it makes the active object single-user before committing
+when its mesh data is linked; linked data in Edit Mode is rejected with guidance
+to switch modes. New loops inherit material and smooth settings, but start with
+default UV and color-attribute values, so those data need inspection after a
+topology change.
+
+In Edit Mode, **Check & Select Manifold Issues** identifies and selects the
+exact elements responsible for:
 
 - open boundary edges (one linked face);
 - over-connected non-manifold edges (more than two linked faces);
@@ -241,7 +363,13 @@ The optional **Selected Boundary / Loose** scope targets unwelded surface seams,
 wire vertices, and isolated points. The default is **All Selected** so an
 explicit vertex selection works immediately. **Protect Existing Edges** is
 available for seam-only repair but is off by default. **Always Merge Exact Pair**
-lets exactly two selected vertices override Merge Distance. The same six
+lets exactly two selected vertices override Merge Distance. **Protect UVs** is
+on by default and preserves every surviving attached face corner across all UV
+maps, including seams, pins, and any UV selection state exposed by the running
+Blender version. When an existing edge is collapsed and one of its two UV
+corners must disappear, that face keeps the UV
+of the vertex selected by the current Keep Inner/Outer/View strategy; UVs on
+the other attached faces remain face-local and unchanged. The same six
 strategies are available from Blender's Edit Mode Merge menu.
 The two view strategies read the active 3D viewport, so they follow perspective,
 orthographic, and camera-aligned views instead of using a fixed world axis.
@@ -328,6 +456,7 @@ Key modules:
 - `core.py`: pure transition templates and graph validation;
 - `mesh_ops.py` / `operators.py`: selection analysis and transactional apply;
 - `quad_repair.py` / `repair_ops.py`: local and propagated all-quad repair;
+- `quad_optimize.py` / `optimize_ops.py`: feature-aware repetitive flow removal;
 - `direction_delete_ops.py`: selected-object face removal by world-axis normal;
 - `quad_flows.py` / `flow_ops.py`: pole-bounded regions, face bands, and overlay;
 - `manifold.py` / `manifold_ops.py`: pure diagnostics and Blender selection;

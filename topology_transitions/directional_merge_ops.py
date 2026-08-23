@@ -201,6 +201,183 @@ def _minimum_world_distance(obj: Any, vertices: list[Any]) -> float:
     return nearest
 
 
+def _unique_loop_layer_name(bm: Any) -> str:
+    """Return a temporary corner-layer name that cannot collide with user data."""
+    base = "_qt_directional_merge_uv_guard"
+    name = base
+    suffix = 1
+    while bm.loops.layers.int.get(name) is not None:
+        name = f"{base}_{suffix}"
+        suffix += 1
+    return name
+
+
+def _capture_protected_uvs(bm: Any, targetmap: dict[Any, Any]) -> dict[str, Any] | None:
+    """Snapshot incident face-corner UVs using IDs that survive a BMesh weld.
+
+    A weld can rebuild every loop on a face, so BMLoop references and flattened
+    loop indices are not stable.  A temporary integer corner layer is copied
+    with the surviving loop custom data and gives us a safe restoration key.
+    """
+    uv_layer_names = tuple(bm.loops.layers.uv.keys())
+    if not uv_layer_names:
+        return None
+
+    bm.faces.ensure_lookup_table()
+    bm.faces.index_update()
+    affected_vertices = set(targetmap)
+    affected_vertices.update(targetmap.values())
+    face_indices = sorted(
+        {
+            face.index
+            for vertex in affected_vertices
+            for face in vertex.link_faces
+        }
+    )
+    if not face_indices:
+        return None
+
+    tag_name = _unique_loop_layer_name(bm)
+    bm.loops.layers.int.new(tag_name)
+
+    # Creating a corner custom-data layer invalidates retained BMLoop wrappers
+    # and layer handles. Reacquire everything on the loop domain before use.
+    tag_layer = bm.loops.layers.int.get(tag_name)
+    uv_layers = {
+        name: bm.loops.layers.uv.get(name) for name in uv_layer_names
+    }
+    snapshots: dict[
+        int, dict[str, tuple[Any, bool | None, bool | None, bool]]
+    ] = {}
+    preferred_snapshot: dict[int, int] = {}
+    next_tag = 1
+
+    bm.faces.ensure_lookup_table()
+    for face_index in face_indices:
+        face = bm.faces[face_index]
+        groups: dict[Any, list[tuple[int, Any, Any]]] = {}
+        for loop in face.loops:
+            tag = next_tag
+            next_tag += 1
+            loop[tag_layer] = tag
+            original_vertex = loop.vert
+            final_vertex = targetmap.get(original_vertex, original_vertex)
+            groups.setdefault(final_vertex, []).append(
+                (tag, original_vertex, final_vertex)
+            )
+            snapshots[tag] = {}
+            for name, uv_layer in uv_layers.items():
+                loop_uv = loop[uv_layer]
+                snapshots[tag][name] = (
+                    tuple(loop_uv.uv),
+                    (
+                        bool(loop_uv.select)
+                        if hasattr(loop_uv, "select")
+                        else None
+                    ),
+                    (
+                        bool(loop_uv.select_edge)
+                        if hasattr(loop_uv, "select_edge")
+                        else None
+                    ),
+                    bool(loop_uv.pin_uv),
+                )
+
+        # If a face contains both the source and chosen anchor, Blender may
+        # retain either corner according to face winding. Redirect whichever
+        # tag survives to this face's anchor snapshot. A source-only attached
+        # face has no anchor corner, so its own corner data remains preferred.
+        for final_vertex, group in groups.items():
+            anchor_entry = next(
+                (
+                    entry
+                    for entry in group
+                    if entry[1] is final_vertex
+                ),
+                None,
+            )
+            if anchor_entry is None:
+                for tag, _original_vertex, _final_vertex in group:
+                    preferred_snapshot[tag] = tag
+                continue
+            anchor_tag = anchor_entry[0]
+            for tag, _original_vertex, _final_vertex in group:
+                preferred_snapshot[tag] = anchor_tag
+
+    return {
+        "tag_name": tag_name,
+        "uv_layer_names": uv_layer_names,
+        "snapshots": snapshots,
+        "preferred_snapshot": preferred_snapshot,
+        "captured_loops": len(snapshots),
+    }
+
+
+def _restore_protected_uvs(bm: Any, guard: dict[str, Any] | None) -> dict[str, int]:
+    if guard is None:
+        return {
+            "uv_layers_protected": 0,
+            "uv_loops_restored": 0,
+            "uv_loops_removed": 0,
+        }
+
+    tag_layer = bm.loops.layers.int.get(guard["tag_name"])
+    if tag_layer is None:
+        raise DirectionalMergeError("Protect UVs lost its temporary corner IDs")
+    uv_layers = {
+        name: bm.loops.layers.uv.get(name)
+        for name in guard["uv_layer_names"]
+    }
+    if any(layer is None for layer in uv_layers.values()):
+        raise DirectionalMergeError("A protected UV map disappeared during the merge")
+
+    restored_corners = 0
+    seen_tags: set[int] = set()
+    for face in bm.faces:
+        for loop in face.loops:
+            surviving_tag = int(loop[tag_layer])
+            if surviving_tag <= 0:
+                continue
+            if surviving_tag in seen_tags:
+                raise DirectionalMergeError(
+                    "Protect UVs found a duplicated temporary corner ID"
+                )
+            seen_tags.add(surviving_tag)
+            preferred_tag = guard["preferred_snapshot"].get(surviving_tag)
+            states = guard["snapshots"].get(preferred_tag)
+            if states is None:
+                raise DirectionalMergeError(
+                    "Protect UVs could not match a surviving face corner"
+                )
+            for name, uv_layer in uv_layers.items():
+                uv, selected, edge_selected, pinned = states[name]
+                loop_uv = loop[uv_layer]
+                loop_uv.uv = uv
+                if selected is not None and hasattr(loop_uv, "select"):
+                    loop_uv.select = selected
+                if edge_selected is not None and hasattr(loop_uv, "select_edge"):
+                    loop_uv.select_edge = edge_selected
+                loop_uv.pin_uv = pinned
+            restored_corners += 1
+
+    layer_count = len(uv_layers)
+    return {
+        "uv_layers_protected": layer_count,
+        "uv_loops_restored": restored_corners * layer_count,
+        "uv_loops_removed": (
+            guard["captured_loops"] - restored_corners
+        ) * layer_count,
+    }
+
+
+def _remove_uv_guard(bm: Any, guard: dict[str, Any] | None) -> None:
+    if guard is None:
+        return
+    tag_layer = bm.loops.layers.int.get(guard["tag_name"])
+    if tag_layer is not None:
+        bm.loops.layers.int.remove(tag_layer)
+
+
 def merge_selected_by_direction(
     context: Any,
     *,
@@ -210,6 +387,7 @@ def merge_selected_by_direction(
     skip_connected: bool,
     view_matrix: Any | None = None,
     force_selected_pair: bool = True,
+    protect_uvs: bool = True,
 ) -> dict[str, int]:
     obj = context.edit_object
     if obj is None or obj.type != "MESH" or obj.mode != "EDIT":
@@ -275,21 +453,34 @@ def merge_selected_by_direction(
         targetmap.update(
             {vertex: anchor for vertex in cluster if vertex is not anchor}
         )
-    bmesh.ops.weld_verts(bm, targetmap=targetmap)
-    for vertex in bm.verts:
-        vertex.select_set(False)
-    for anchor in anchors:
-        if anchor.is_valid:
-            anchor.select_set(True)
-    bm.select_mode = {"VERT"}
-    context.tool_settings.mesh_select_mode = (True, False, False)
-    bm.normal_update()
+    uv_guard = _capture_protected_uvs(bm, targetmap) if protect_uvs else None
+    uv_stats = {
+        "uv_layers_protected": 0,
+        "uv_loops_restored": 0,
+        "uv_loops_removed": 0,
+    }
+    try:
+        bmesh.ops.weld_verts(bm, targetmap=targetmap)
+        for vertex in bm.verts:
+            vertex.select_set(False)
+        for anchor in anchors:
+            if anchor.is_valid:
+                anchor.select_set(True)
+        bm.select_mode = {"VERT"}
+        context.tool_settings.mesh_select_mode = (True, False, False)
+        bm.normal_update()
+        # Restore UV selection flags after mesh selection changes, because UV
+        # sync can otherwise overwrite the saved per-corner state.
+        uv_stats = _restore_protected_uvs(bm, uv_guard)
+    finally:
+        _remove_uv_guard(bm, uv_guard)
     bmesh.update_edit_mesh(obj.data, loop_triangles=True, destructive=True)
     return {
         "candidates": len(selected),
         "clusters": len(clusters),
         "merged_vertices": len(targetmap),
         "survivors": len(anchors),
+        **uv_stats,
     }
 
 
@@ -330,6 +521,14 @@ class QT_OT_directional_merge(Operator):
         ),
         default=True,
     )
+    protect_uvs: BoolProperty(
+        name="Protect UVs",
+        description=(
+            "Keep every surviving attached face corner on its original UV; "
+            "when an edge collapses, keep that face's chosen-anchor UV"
+        ),
+        default=True,
+    )
 
     @classmethod
     def poll(cls, context: Any) -> bool:
@@ -353,21 +552,28 @@ class QT_OT_directional_merge(Operator):
                 skip_connected=self.skip_connected,
                 view_matrix=view_matrix,
                 force_selected_pair=self.force_selected_pair,
+                protect_uvs=self.protect_uvs,
             )
         except DirectionalMergeError as exc:
             self.report({"WARNING"}, str(exc))
             return {"CANCELLED"}
         label = dict((item[0], item[1]) for item in STRATEGY_ITEMS)[self.strategy]
+        uv_message = ""
+        if stats["uv_layers_protected"]:
+            uv_message = (
+                f"; protected {stats['uv_loops_restored']} UV corner value(s)"
+            )
         self.report(
             {"INFO"},
             f"{label}: merged {stats['merged_vertices']} vertex/vertices "
-            f"across {stats['clusters']} close group(s)",
+            f"across {stats['clusters']} close group(s){uv_message}",
         )
         return {"FINISHED"}
 
 
-def _draw_merge_menu(self: Any, _context: Any) -> None:
+def _draw_merge_menu(self: Any, context: Any) -> None:
     self.layout.separator()
+    settings = getattr(context.scene, "topology_transitions", None)
     for strategy, label in (
         ("RADIAL_OUTER", "By Distance: Keep Outer"),
         ("RADIAL_INNER", "By Distance: Keep Inner"),
@@ -382,6 +588,12 @@ def _draw_merge_menu(self: Any, _context: Any) -> None:
             icon="AUTOMERGE_OFF",
         )
         operator.strategy = strategy
+        if settings is not None:
+            operator.distance = settings.directional_merge_distance
+            operator.scope = settings.directional_merge_scope
+            operator.skip_connected = settings.directional_merge_skip_connected
+            operator.force_selected_pair = settings.directional_merge_force_pair
+            operator.protect_uvs = settings.directional_merge_protect_uvs
 
 
 CLASSES = (QT_OT_directional_merge,)

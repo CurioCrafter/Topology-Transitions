@@ -152,8 +152,98 @@ class QT_PT_sidebar(Panel):
         repair.label(text="Local pairs are preferred automatically", icon="INFO")
         repair.label(text="Isolated faces carry splits through quad rings")
 
+        optimize = layout.box()
+        optimize.label(text="Quad Flow Optimization")
+        optimize.label(text="Remove repetitive remesher edge loops")
+        optimize.prop(settings, "optimize_sensitivity", text="Detection")
+        optimize.prop(settings, "optimize_scope", text="")
+        optimize.prop(settings, "optimize_cycles")
+        preset_summary = {
+            "AUTO": "Auto tries Conservative, Balanced, then Aggressive",
+            "CONSERVATIVE": "8 deg bend | 2.5% error | boundaries locked",
+            "BALANCED": "18 deg bend | 5% error | open flows allowed",
+            "AGGRESSIVE": "35 deg bend | 10% error | short flows allowed",
+        }
+        if settings.optimize_sensitivity == "CUSTOM":
+            row = optimize.row(align=True)
+            row.prop(settings, "optimize_branch_guard_rings")
+            row.prop(settings, "optimize_min_loop_edges")
+            row = optimize.row(align=True)
+            row.prop(settings, "optimize_max_face_angle")
+            row.prop(settings, "optimize_feature_angle")
+            optimize.prop(settings, "optimize_max_error_percent")
+            optimize.prop(settings, "optimize_preserve_boundaries")
+        else:
+            optimize.label(
+                text=preset_summary[settings.optimize_sensitivity],
+                icon="INFO",
+            )
+        grid = optimize.grid_flow(row_major=True, columns=2, align=True)
+        grid.prop(settings, "optimize_preserve_seams")
+        grid.prop(settings, "optimize_preserve_sharp")
+        grid.prop(settings, "optimize_preserve_creases")
+        grid.prop(settings, "optimize_preserve_materials")
+        row = optimize.row(align=True)
+        row.operator(
+            "mesh.quad_transition_analyze_optimization",
+            text="Analyze / Select Flows",
+            icon="VIEWZOOM",
+        )
+        row.operator(
+            "mesh.quad_transition_optimize_flows",
+            text=(
+                "Auto Optimize"
+                if settings.optimize_sensitivity == "AUTO"
+                else "Optimize Quad Flow"
+            ),
+            icon="MOD_DECIM",
+        )
+        optimize.prop(
+            settings,
+            "optimize_show_help",
+            text="Explain Every Control",
+            toggle=True,
+        )
+        if settings.optimize_show_help:
+            guide = optimize.box()
+            guide.label(text="Detection: how sensitive flow finding is")
+            guide.label(text="Scope: whole mesh, or only selected faces")
+            guide.label(text="Cycles: repeated density-halving passes")
+            guide.label(text="Surface Angle: bend a removed flow may cross")
+            guide.label(text="Crease Angle: geometric edge treated as a crease")
+            guide.label(text="Surface Error: allowed distance from old shape")
+            guide.label(text="Guard Rings: dense rings retained around poles")
+            guide.label(text="Min Flow: shortest complete loop considered")
+            guide.label(text="Open Boundaries: lock density along open edges")
+            guide.label(text="UV Seams: retain texture-island borders")
+            guide.label(text="Sharp/Creases: retain shading and weighted edges")
+            guide.label(text="Materials: retain borders between materials")
+            guide.label(text="Analyze: previews the next removable batch")
+        if settings.optimize_object_name:
+            optimize.label(
+                text=f"{settings.optimize_removed_faces} faces removed | "
+                f"{settings.optimize_completed_cycles} cycles"
+            )
+            optimize.label(
+                text=f"{settings.optimize_candidate_loops} candidates | "
+                f"error {settings.optimize_max_measured_error:.6g}"
+            )
+            optimize.label(
+                text=f"Mode used: {settings.optimize_effective_mode}",
+            )
+            optimize.label(text=settings.optimize_status, icon="INFO")
+            optimize.label(text=settings.optimize_diagnostic)
+
         integrity = layout.box()
         integrity.label(text="Mesh Integrity")
+        integrity.operator(
+            "mesh.quad_transition_solve_all_nonmanifold",
+            text="Auto Solve All Non-Manifold Areas",
+            icon="MOD_REMESH",
+        )
+        integrity.label(text="Even holes use the quickest quad fan")
+        integrity.label(text="Triangular holes become three quad flows")
+        integrity.separator()
         integrity.operator(
             "mesh.quad_transition_check_manifold",
             text="Check & Select Manifold Issues",
@@ -228,6 +318,7 @@ class QT_PT_sidebar(Panel):
         merge.prop(settings, "directional_merge_scope", text="")
         merge.prop(settings, "directional_merge_skip_connected")
         merge.prop(settings, "directional_merge_force_pair")
+        merge.prop(settings, "directional_merge_protect_uvs")
         merge.prop(settings, "directional_merge_strategy", text="")
         directional_merge = merge.operator(
             "mesh.quad_transition_directional_merge",
@@ -241,6 +332,7 @@ class QT_PT_sidebar(Panel):
             settings.directional_merge_skip_connected
         )
         directional_merge.force_selected_pair = settings.directional_merge_force_pair
+        directional_merge.protect_uvs = settings.directional_merge_protect_uvs
         row = merge.row(align=True)
         keep_outer = row.operator(
             "mesh.quad_transition_directional_merge",
@@ -252,6 +344,7 @@ class QT_PT_sidebar(Panel):
         keep_outer.scope = settings.directional_merge_scope
         keep_outer.skip_connected = settings.directional_merge_skip_connected
         keep_outer.force_selected_pair = settings.directional_merge_force_pair
+        keep_outer.protect_uvs = settings.directional_merge_protect_uvs
         keep_inner = row.operator(
             "mesh.quad_transition_directional_merge",
             text="Keep Inner",
@@ -262,6 +355,7 @@ class QT_PT_sidebar(Panel):
         keep_inner.scope = settings.directional_merge_scope
         keep_inner.skip_connected = settings.directional_merge_skip_connected
         keep_inner.force_selected_pair = settings.directional_merge_force_pair
+        keep_inner.protect_uvs = settings.directional_merge_protect_uvs
         row = merge.row(align=True)
         keep_toward = row.operator(
             "mesh.quad_transition_directional_merge",
@@ -273,6 +367,7 @@ class QT_PT_sidebar(Panel):
         keep_toward.scope = settings.directional_merge_scope
         keep_toward.skip_connected = settings.directional_merge_skip_connected
         keep_toward.force_selected_pair = settings.directional_merge_force_pair
+        keep_toward.protect_uvs = settings.directional_merge_protect_uvs
         keep_away = row.operator(
             "mesh.quad_transition_directional_merge",
             text="Away From View",
@@ -283,6 +378,7 @@ class QT_PT_sidebar(Panel):
         keep_away.scope = settings.directional_merge_scope
         keep_away.skip_connected = settings.directional_merge_skip_connected
         keep_away.force_selected_pair = settings.directional_merge_force_pair
+        keep_away.protect_uvs = settings.directional_merge_protect_uvs
         if context.mode != "EDIT_MESH":
             merge.label(text="Enter Edit Mode to merge", icon="INFO")
 
