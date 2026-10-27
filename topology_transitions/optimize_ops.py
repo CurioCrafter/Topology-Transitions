@@ -202,8 +202,7 @@ def _edge_feature_signature(
     if options.preserve_materials:
         signature.append(
             len(edge.link_faces) == 2
-            and edge.link_faces[0].material_index
-            != edge.link_faces[1].material_index
+            and edge.link_faces[0].material_index != edge.link_faces[1].material_index
         )
     return tuple(signature)
 
@@ -306,9 +305,11 @@ def _protected_vertices(
         ]
         if len(feature_edges) not in {0, 2}:
             seeds.add(vertex)
-        elif len(feature_edges) == 2 and _chord_error_ratio(
-            vertex, feature_edges[0], feature_edges[1]
-        ) > options.max_error_ratio:
+        elif (
+            len(feature_edges) == 2
+            and _chord_error_ratio(vertex, feature_edges[0], feature_edges[1])
+            > options.max_error_ratio
+        ):
             seeds.add(vertex)
 
     protected = set(seeds)
@@ -338,9 +339,7 @@ def _candidate_from_component(
         return None, "too_short"
     component_set = set(component)
     vertices = {vertex for edge in component for vertex in edge.verts}
-    incident_counts = Counter(
-        vertex for edge in component for vertex in edge.verts
-    )
+    incident_counts = Counter(vertex for edge in component for vertex in edge.verts)
     endpoints = [vertex for vertex, count in incident_counts.items() if count == 1]
     closed = not endpoints and all(count == 2 for count in incident_counts.values())
     open_boundary = (
@@ -367,8 +366,7 @@ def _candidate_from_component(
     linked_faces = {face for edge in component for face in edge.link_faces}
     if options.selected_faces_only:
         if any(
-            not face.select
-            and (scope_layer is None or not face[scope_layer])
+            not face.select and (scope_layer is None or not face[scope_layer])
             for face in linked_faces
         ):
             return None, "outside_selection"
@@ -378,12 +376,8 @@ def _candidate_from_component(
         crossing = [edge for edge in vertex.link_edges if edge not in component_set]
         if len(crossing) != 2:
             return None, "interrupted"
-        first_signature = _edge_feature_signature(
-            crossing[0], options, float_layers
-        )
-        second_signature = _edge_feature_signature(
-            crossing[1], options, float_layers
-        )
+        first_signature = _edge_feature_signature(crossing[0], options, float_layers)
+        second_signature = _edge_feature_signature(crossing[1], options, float_layers)
         if first_signature != second_signature:
             return None, "feature_crossing"
         chord_errors.append(_chord_error_ratio(vertex, crossing[0], crossing[1]))
@@ -681,9 +675,7 @@ def _apply_candidate_batch(
 
     if len(bm.faces) >= before_faces:
         raise QuadOptimizeError("Candidate flows did not reduce the face count")
-    if any(
-        len(face.verts) != 4 or face.calc_area() <= 1.0e-12 for face in bm.faces
-    ):
+    if any(len(face.verts) != 4 or face.calc_area() <= 1.0e-12 for face in bm.faces):
         raise QuadOptimizeError(
             "Candidate batch did not remain valid all-quad topology"
         )
@@ -714,18 +706,13 @@ def _try_candidate_keys(
     trial = working.copy()
     try:
         trial_candidates = discover_loop_candidates(trial, options)
-        trial_by_key = {
-            candidate.key: candidate for candidate in trial_candidates
-        }
+        trial_by_key = {candidate.key: candidate for candidate in trial_candidates}
         missing = [key for key in keys if key not in trial_by_key]
         if missing:
             raise QuadOptimizeError(
                 f"{len(missing)} candidate flows could not be remapped safely"
             )
-        trial_selected = {
-            trial_by_key[key].identifier
-            for key in keys
-        }
+        trial_selected = {trial_by_key[key].identifier for key in keys}
         result = _apply_candidate_batch(
             trial,
             trial_candidates,
@@ -745,11 +732,7 @@ def _apply_partitioned_candidate_batch(
     options: OptimizeOptions,
 ) -> tuple[Any, dict[str, float | int], int, int, str]:
     selected = sorted(
-        (
-            candidate
-            for candidate in candidates
-            if candidate.identifier in selected_ids
-        ),
+        (candidate for candidate in candidates if candidate.identifier in selected_ids),
         key=lambda candidate: (
             candidate.error_ratio,
             candidate.curvature,
@@ -897,9 +880,7 @@ def optimize_quad_flows(
                 attempted = " -> ".join(detection.attempted_labels)
                 if not stats["passes"]:
                     stats["effective_mode"] = detection.options.label
-                    stats["diagnostic"] = _diagnostic_summary(
-                        detection.diagnostics
-                    )
+                    stats["diagnostic"] = _diagnostic_summary(detection.diagnostics)
                     stats["status"] = f"No safe flows after {attempted} detection"
                 else:
                     stats["diagnostic"] += "; no additional safe flows remain"
@@ -1086,11 +1067,7 @@ class QT_OT_optimize_quad_flows(Operator):
             if context.mode == "EDIT_MESH"
             else context.active_object
         )
-        return (
-            obj is not None
-            and obj.type == "MESH"
-            and obj.mode in {"OBJECT", "EDIT"}
-        )
+        return obj is not None and obj.type == "MESH" and obj.mode in {"OBJECT", "EDIT"}
 
     def execute(self, context: Any):
         settings = context.scene.topology_transitions

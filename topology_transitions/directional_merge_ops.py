@@ -228,11 +228,7 @@ def _capture_protected_uvs(bm: Any, targetmap: dict[Any, Any]) -> dict[str, Any]
     affected_vertices = set(targetmap)
     affected_vertices.update(targetmap.values())
     face_indices = sorted(
-        {
-            face.index
-            for vertex in affected_vertices
-            for face in vertex.link_faces
-        }
+        {face.index for vertex in affected_vertices for face in vertex.link_faces}
     )
     if not face_indices:
         return None
@@ -243,12 +239,8 @@ def _capture_protected_uvs(bm: Any, targetmap: dict[Any, Any]) -> dict[str, Any]
     # Creating a corner custom-data layer invalidates retained BMLoop wrappers
     # and layer handles. Reacquire everything on the loop domain before use.
     tag_layer = bm.loops.layers.int.get(tag_name)
-    uv_layers = {
-        name: bm.loops.layers.uv.get(name) for name in uv_layer_names
-    }
-    snapshots: dict[
-        int, dict[str, tuple[Any, bool | None, bool | None, bool]]
-    ] = {}
+    uv_layers = {name: bm.loops.layers.uv.get(name) for name in uv_layer_names}
+    snapshots: dict[int, dict[str, tuple[Any, bool | None, bool | None, bool]]] = {}
     preferred_snapshot: dict[int, int] = {}
     next_tag = 1
 
@@ -270,11 +262,7 @@ def _capture_protected_uvs(bm: Any, targetmap: dict[Any, Any]) -> dict[str, Any]
                 loop_uv = loop[uv_layer]
                 snapshots[tag][name] = (
                     tuple(loop_uv.uv),
-                    (
-                        bool(loop_uv.select)
-                        if hasattr(loop_uv, "select")
-                        else None
-                    ),
+                    (bool(loop_uv.select) if hasattr(loop_uv, "select") else None),
                     (
                         bool(loop_uv.select_edge)
                         if hasattr(loop_uv, "select_edge")
@@ -289,11 +277,7 @@ def _capture_protected_uvs(bm: Any, targetmap: dict[Any, Any]) -> dict[str, Any]
         # face has no anchor corner, so its own corner data remains preferred.
         for final_vertex, group in groups.items():
             anchor_entry = next(
-                (
-                    entry
-                    for entry in group
-                    if entry[1] is final_vertex
-                ),
+                (entry for entry in group if entry[1] is final_vertex),
                 None,
             )
             if anchor_entry is None:
@@ -324,10 +308,7 @@ def _restore_protected_uvs(bm: Any, guard: dict[str, Any] | None) -> dict[str, i
     tag_layer = bm.loops.layers.int.get(guard["tag_name"])
     if tag_layer is None:
         raise DirectionalMergeError("Protect UVs lost its temporary corner IDs")
-    uv_layers = {
-        name: bm.loops.layers.uv.get(name)
-        for name in guard["uv_layer_names"]
-    }
+    uv_layers = {name: bm.loops.layers.uv.get(name) for name in guard["uv_layer_names"]}
     if any(layer is None for layer in uv_layers.values()):
         raise DirectionalMergeError("A protected UV map disappeared during the merge")
 
@@ -364,9 +345,7 @@ def _restore_protected_uvs(bm: Any, guard: dict[str, Any] | None) -> dict[str, i
     return {
         "uv_layers_protected": layer_count,
         "uv_loops_restored": restored_corners * layer_count,
-        "uv_loops_removed": (
-            guard["captured_loops"] - restored_corners
-        ) * layer_count,
+        "uv_loops_removed": (guard["captured_loops"] - restored_corners) * layer_count,
     }
 
 
@@ -450,9 +429,7 @@ def merge_selected_by_direction(
     for cluster in clusters:
         anchor = _choose_anchor(obj, cluster, strategy, view_matrix)
         anchors.append(anchor)
-        targetmap.update(
-            {vertex: anchor for vertex in cluster if vertex is not anchor}
-        )
+        targetmap.update({vertex: anchor for vertex in cluster if vertex is not anchor})
     uv_guard = _capture_protected_uvs(bm, targetmap) if protect_uvs else None
     uv_stats = {
         "uv_layers_protected": 0,
@@ -560,9 +537,7 @@ class QT_OT_directional_merge(Operator):
         label = dict((item[0], item[1]) for item in STRATEGY_ITEMS)[self.strategy]
         uv_message = ""
         if stats["uv_layers_protected"]:
-            uv_message = (
-                f"; protected {stats['uv_loops_restored']} UV corner value(s)"
-            )
+            uv_message = f"; protected {stats['uv_loops_restored']} UV corner value(s)"
         self.report(
             {"INFO"},
             f"{label}: merged {stats['merged_vertices']} vertex/vertices "

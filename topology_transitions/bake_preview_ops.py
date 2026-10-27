@@ -48,8 +48,7 @@ def _sample_indices(count: int, limit: int) -> tuple[int, ...]:
     if count <= limit:
         return tuple(range(count))
     return tuple(
-        min(count - 1, math.floor(index * count / limit))
-        for index in range(limit)
+        min(count - 1, math.floor(index * count / limit)) for index in range(limit)
     )
 
 
@@ -84,10 +83,7 @@ def _world_ray_hit(
     location_world = to_world @ location
     delta = location_world - origin_world
     distance = delta.length
-    if (
-        distance > max_distance + 1.0e-7
-        or delta.dot(direction_world) < -1.0e-7
-    ):
+    if distance > max_distance + 1.0e-7 or delta.dot(direction_world) < -1.0e-7:
         return None
     return location_world, distance
 
@@ -349,9 +345,7 @@ def toggle_bake_ray_preview(
 ) -> dict[str, Any]:
     existing = _preview_objects(source)
     signature = mesh_topology_signature(source.data)
-    stale = any(
-        obj.get(PREVIEW_SIGNATURE_KEY, "") != signature for obj in existing
-    )
+    stale = any(obj.get(PREVIEW_SIGNATURE_KEY, "") != signature for obj in existing)
     current_high_names = "\n".join(
         sorted(obj.name for obj in _selected_high_objects(context, source))
     )

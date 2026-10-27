@@ -22,6 +22,7 @@ def register() -> None:
         directional_merge_ops,
         examples,
         flow_ops,
+        lens_ops,
         loose_xray_ops,
         manifold_ops,
         operators,
@@ -42,6 +43,7 @@ def register() -> None:
     loose_xray_ops.register()
     examples.register()
     flow_ops.register()
+    lens_ops.register()
     surface_ops.register()
     surface_paint_ops.register()
     bake_preview_ops.register()
@@ -58,6 +60,7 @@ def unregister() -> None:
         directional_merge_ops,
         examples,
         flow_ops,
+        lens_ops,
         loose_xray_ops,
         manifold_ops,
         operators,
@@ -78,6 +81,7 @@ def unregister() -> None:
     bake_preview_ops.unregister()
     surface_paint_ops.unregister()
     surface_ops.unregister()
+    lens_ops.unregister()
     flow_ops.unregister()
     examples.unregister()
     manifold_ops.unregister()

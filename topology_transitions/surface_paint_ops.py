@@ -6,7 +6,6 @@ from collections import Counter
 from math import cos, degrees, pi, radians, sin
 from typing import Any
 
-import blf
 import bmesh
 import bpy
 import gpu
@@ -16,9 +15,17 @@ from bpy_extras import view3d_utils
 from gpu_extras.batch import batch_for_shader
 from mathutils import Vector
 
+from . import hud
 from .core import TransitionError
 from .edit_mesh import restore_bmesh
-from .paint_grid import Dab, PaintGrid, Seed, grid_report, grow_paint_grid
+from .paint_grid import (
+    Dab,
+    Mirror,
+    PaintGrid,
+    Seed,
+    grid_report,
+    grow_paint_grid,
+)
 
 AUTO_CELL_FACTOR = 0.4
 WELD_FACTOR = 0.35
@@ -125,6 +132,8 @@ def plan_surface_paint(
     flow_angle: float,
     relax_iterations: int,
     fallback_flow: Vector,
+    mirror: Mirror | None = None,
+    bridge: bool = True,
 ) -> PaintGrid:
     seeds = _seeds(strokes, normals, fallback_flow)
     if cell <= 0.0:
@@ -136,7 +145,18 @@ def plan_surface_paint(
         flow_angle=flow_angle,
         project=surface.projector(cell * 2.0),
         relax_iterations=relax_iterations,
+        mirror=mirror,
+        bridge=bridge,
     )
+
+
+def object_mirror_plane(obj: Object) -> Mirror:
+    """The YZ plane of ``obj``: the plane a Mirror modifier on X reflects in."""
+
+    normal = obj.matrix_world.inverted_safe().transposed().to_3x3() @ Vector(
+        (1.0, 0.0, 0.0)
+    )
+    return Mirror(tuple(obj.matrix_world.translation), tuple(normal.normalized()))
 
 
 def _boundary_verts(bm: Any) -> set[Any]:
@@ -221,6 +241,8 @@ def build_surface_paint(
     relax_iterations: int = 3,
     weld: bool = True,
     fallback_flow: Vector | None = None,
+    mirror_x: bool = False,
+    bridge: bool = True,
 ) -> dict[str, Any]:
     """Build the painted quad grid into the active Edit Mode mesh."""
 
@@ -241,6 +263,8 @@ def build_surface_paint(
         flow_angle=flow_angle,
         relax_iterations=relax_iterations,
         fallback_flow=fallback_flow or Vector((1.0, 0.0, 0.0)),
+        mirror=object_mirror_plane(obj) if mirror_x else None,
+        bridge=bridge,
     )
     if not grid.faces:
         raise TransitionError(
@@ -295,6 +319,19 @@ class QT_OT_surface_paint(Operator):
         description="Merge painted border vertices onto nearby open edges of this mesh",
         default=True,
     )
+    mirror_x: BoolProperty(
+        name="Mirror X",
+        description="Paint one half; the other half is mirrored across local X",
+        default=False,
+    )
+    bridge: BoolProperty(
+        name="Join Patches",
+        description=(
+            "Join facing borders of separate strokes with quads, using 5-3 style "
+            "transitions where their loop counts differ"
+        ),
+        default=True,
+    )
 
     @classmethod
     def poll(cls, context: Any) -> bool:
@@ -334,7 +371,7 @@ class QT_OT_surface_paint(Operator):
         stroke = self._strokes[-1]
         if stroke and (Vector(stroke[-1].center) - point).length < radius * 0.3:
             return
-        stroke.append(Dab(tuple(point), radius, erase=self._erasing))
+        stroke.append(Dab(tuple(point), radius, self._erasing, tuple(normal)))
         self._normals[-1].append(normal)
 
     def _cell(self) -> float:
@@ -359,6 +396,8 @@ class QT_OT_surface_paint(Operator):
                 flow_angle=self.flow_angle,
                 relax_iterations=self.relax_iterations,
                 fallback_flow=self._view_up,
+                mirror=self._mirror_plane if self.mirror_x else None,
+                bridge=self.bridge,
             )
         except TransitionError as exc:
             self._error = str(exc)
@@ -428,42 +467,82 @@ class QT_OT_surface_paint(Operator):
         if bpy.context.area != self._area:
             return
         cell = self._cell()
-        cell_text = f"cell {cell:.4g}" if cell > 0.0 else "cell auto"
-        lines = [
-            "SURFACE PAINT QUADS",
-            f"Brush {self.brush_pixels} px | {cell_text} | "
-            f"flow {degrees(self.flow_angle):+.0f} deg | relax {self.relax_iterations}",
+
+        def toggle(label: str, on: bool):
+            state = "on" if on else "off"
+            return ("chip", hud.TEAL if on else hud.MUTED, f"{label} {state}")
+
+        rows = [
+            [
+                ("chip", hud.SKY, f"brush {self.brush_pixels}px"),
+                ("chip", hud.VIOLET, f"cell {cell:.3g}" if cell else "cell auto"),
+                ("chip", hud.AMBER, f"flow {degrees(self.flow_angle):+.0f}\u00b0"),
+                toggle("mirror", self.mirror_x),
+                toggle("join", self.bridge),
+            ]
         ]
         if self._grid is not None:
             report = grid_report(self._grid)
-            lines.append(
-                f"{report['quads']} quads, {report['vertices']} vertices, "
-                f"{report['interior_poles']} interior poles"
+            poles = report["interior_poles"]
+            rows.append(
+                [
+                    ("chip", hud.TEAL, f"{report['quads']} quads"),
+                    ("chip", hud.SKY, f"{report['vertices']} verts"),
+                    ("chip", hud.MAGENTA if poles else hud.TEAL, f"{poles} poles"),
+                    ("chip", hud.VIOLET, f"{report['bridges']} joins"),
+                ]
             )
             stopped = report["rejected_folds"] + report["rejected_overlaps"]
             if stopped:
-                lines.append(
-                    f"{stopped} cells stopped where the surface bends or wraps; "
-                    "paint curved areas as separate patches"
+                rows.append(
+                    [
+                        ("chip", hud.CORAL, f"{stopped} stopped"),
+                        ("where the surface folds back or patches meet", hud.MUTED),
+                    ]
                 )
         elif self._error:
-            lines.append(self._error)
-        lines.extend(
+            rows.append([("chip", hud.CORAL, "!"), (self._error, hud.INK)])
+        else:
+            rows.append([("Paint over the target; the grid appears live.", hud.INK)])
+        rows.extend(
             (
-                "Learn: each stroke's direction becomes its edge-loop direction.",
-                "Regular grids have 4 edges at every inner vertex: no poles added.",
-                "LMB paint | Ctrl+LMB erase | [ ] brush | - = cell | R/Shift+R rotate",
-                "Backspace undo stroke | Enter build | Esc cancel | wheel/MMB navigate",
+                [("Each stroke's direction becomes its edge-loop direction.", hud.INK)],
+                [
+                    ("Grid vertices have 4 edges (no poles);", hud.MUTED),
+                    ("joins", hud.VIOLET),
+                    ("add", hud.MUTED),
+                    ("poles", hud.MAGENTA),
+                    ("on purpose.", hud.MUTED),
+                ],
+                [
+                    ("key", "LMB"),
+                    ("paint", hud.MUTED),
+                    ("key", "Ctrl"),
+                    ("erase", hud.MUTED),
+                    ("key", "[ ]"),
+                    ("brush", hud.MUTED),
+                    ("key", "- ="),
+                    ("cell", hud.MUTED),
+                    ("key", "R"),
+                    ("flow", hud.MUTED),
+                ],
+                [
+                    ("key", "X"),
+                    ("mirror", hud.MUTED),
+                    ("key", "J"),
+                    ("join", hud.MUTED),
+                    ("key", "Bksp"),
+                    ("undo", hud.MUTED),
+                    ("key", "Enter"),
+                    ("build", hud.MUTED),
+                    ("key", "Esc"),
+                    ("cancel", hud.MUTED),
+                ],
             )
         )
-        font_id = 0
-        blf.size(font_id, 15.0)
-        blf.enable(font_id, blf.SHADOW)
-        blf.shadow(font_id, 3, 0.0, 0.0, 0.0, 0.9)
-        for index, line in enumerate(lines):
-            blf.position(font_id, 48.0, 40.0 + (len(lines) - index) * 20.0, 0.0)
-            blf.draw(font_id, line)
-        blf.disable(font_id, blf.SHADOW)
+        hud.draw_card(
+            hud.left_margin(self._area), 24.0, "Surface Paint", hud.TEAL, rows
+        )
         if self._mouse is not None:
             shader = gpu.shader.from_builtin("UNIFORM_COLOR")
             x, y = self._mouse
@@ -510,6 +589,7 @@ class QT_OT_surface_paint(Operator):
         self._surface = TargetSurface(context, target)
         self._target = target
         self._object_name = context.edit_object.name
+        self._mirror_plane = object_mirror_plane(context.edit_object)
         self._strokes: list[list[Dab]] = []
         self._normals: list[list[Vector]] = []
         self._painting = self._erasing = False
@@ -525,7 +605,7 @@ class QT_OT_surface_paint(Operator):
         context.window_manager.modal_handler_add(self)
         context.workspace.status_text_set(
             "Surface Paint: LMB paint, Ctrl+LMB erase, [ ] brush, - = cell, "
-            "R rotate flow, Backspace undo stroke, Enter build, Esc cancel"
+            "R flow, X mirror, J join, Backspace undo, Enter build, Esc cancel"
         )
         self._area.tag_redraw()
         return {"RUNNING_MODAL"}
@@ -542,6 +622,8 @@ class QT_OT_surface_paint(Operator):
                 relax_iterations=self.relax_iterations,
                 weld=self.weld,
                 fallback_flow=self._view_up,
+                mirror_x=self.mirror_x,
+                bridge=self.bridge,
             )
         except TransitionError as exc:
             self.report({"ERROR"}, str(exc))
@@ -605,6 +687,14 @@ class QT_OT_surface_paint(Operator):
                 factor = 1.1 if event.type == "EQUAL" else 1.0 / 1.1
                 self.cell_size = self._cell() * factor
                 self._replan()
+            return {"RUNNING_MODAL"}
+        if event.type == "X":
+            self.mirror_x = not self.mirror_x
+            self._replan()
+            return {"RUNNING_MODAL"}
+        if event.type == "J":
+            self.bridge = not self.bridge
+            self._replan()
             return {"RUNNING_MODAL"}
         if event.type == "R":
             self.flow_angle += radians(-15.0 if event.shift else 15.0)

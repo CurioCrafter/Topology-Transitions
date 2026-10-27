@@ -69,8 +69,7 @@ def nearby_target_faces(source: Any, target: Any, distance: float) -> set[int]:
         raise RuntimeError("The selected source region has no usable triangles")
     limit = max(float(distance), 0.0) + DISTANCE_EPSILON
     source_centers = [
-        source.matrix_world @ source.data.polygons[index].center
-        for index in selected
+        source.matrix_world @ source.data.polygons[index].center for index in selected
     ]
     target.data.calc_loop_triangles()
     target_triangles: dict[int, list[tuple[Vector, ...]]] = defaultdict(list)
@@ -147,11 +146,7 @@ def _align_loops(
     vertices: list[Vector],
 ) -> tuple[list[int], list[int]]:
     target_index, source_index = min(
-        (
-            (i, j)
-            for i in range(len(target_loop))
-            for j in range(len(source_loop))
-        ),
+        ((i, j) for i in range(len(target_loop)) for j in range(len(source_loop))),
         key=lambda pair: (
             vertices[target_loop[pair[0]]] - vertices[source_loop[pair[1]]]
         ).length_squared,

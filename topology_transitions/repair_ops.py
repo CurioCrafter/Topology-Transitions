@@ -872,9 +872,9 @@ def solve_all_nonmanifold(
             report,
         )
         stats["report"] = report
-        stats["had_custom_data"] = bool(mesh.uv_layers) or len(
-            getattr(mesh, "color_attributes", ())
-        ) > 0
+        stats["had_custom_data"] = (
+            bool(mesh.uv_layers) or len(getattr(mesh, "color_attributes", ())) > 0
+        )
         return stats
     finally:
         working.free()
@@ -1047,11 +1047,7 @@ class QT_OT_solve_all_nonmanifold(Operator):
             if context.mode == "EDIT_MESH"
             else context.active_object
         )
-        return (
-            obj is not None
-            and obj.type == "MESH"
-            and obj.mode in {"OBJECT", "EDIT"}
-        )
+        return obj is not None and obj.type == "MESH" and obj.mode in {"OBJECT", "EDIT"}
 
     def execute(self, context: Any):
         try:

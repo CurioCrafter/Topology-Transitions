@@ -28,6 +28,7 @@ from topology_transitions.directional_merge_ops import (  # noqa: E402
     merge_selected_by_direction,
 )
 from topology_transitions.flow_ops import build_flow_session  # noqa: E402
+from topology_transitions.lens_ops import lens_snapshot  # noqa: E402
 from topology_transitions.operators import _make_template_and_layout  # noqa: E402
 from topology_transitions.paint_grid import Dab  # noqa: E402
 from topology_transitions.surface_paint_ops import (  # noqa: E402
@@ -1551,9 +1552,39 @@ def assert_surface_paint() -> None:
         results[weld] = stats
     if results[True]["welded"] < 3 or results[False]["welded"] != 0:
         raise AssertionError(f"Surface paint weld failed: {results}")
+
+    retopo, target = create_paint_fixture("paint_mirror", lanes)
+    stroke = [Dab((0.6 + x * 0.3, 4.0, 0.5), 0.7) for x in range(5)]
+    mirrored = build_surface_paint(
+        bpy.context,
+        [stroke],
+        [[Vector((0.0, 0.0, 1.0))] * len(stroke)],
+        target=target,
+        cell=0.25,
+        mirror_x=True,
+    )
+    bm = bmesh.from_edit_mesh(retopo.data)
+    new = [face for face in bm.faces if face.select]
+    left = sum(1 for face in new if face.calc_center_median().x < 0.0)
+    right = len(new) - left
+    if (
+        not new
+        or left != right
+        or any(len(edge.link_faces) > 2 for edge in bm.edges)
+        or not any(abs(vertex.co.x) < 1.0e-6 for vertex in bm.verts if vertex.select)
+    ):
+        raise AssertionError(f"Surface paint mirror failed: {mirrored} {left}/{right}")
+
+    clear_scene()
+    bpy.ops.mesh.primitive_cube_add()
+    bpy.ops.object.mode_set(mode="EDIT")
+    snapshot = lens_snapshot(bpy.context.edit_object)
+    if snapshot["counts"]["n_pole"] != 8 or snapshot["faces"]["quads"] != 6:
+        raise AssertionError(f"Topology Lens cube counts failed: {snapshot['counts']}")
     print(
         f"QT_SURFACE_PAINT_PASS quads={results[True]['quads']} "
-        f"welded={results[True]['welded']} unwelded=0"
+        f"welded={results[True]['welded']} unwelded=0 "
+        f"mirrored={mirrored['quads']} lens_cube_poles=8"
     )
 
 

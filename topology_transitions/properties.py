@@ -235,9 +235,7 @@ class QT_PG_settings(PropertyGroup):
         subtype="FACTOR",
     )
     loose_xray_object_name: StringProperty(name="Inspected Object", default="")
-    loose_xray_component_count: IntProperty(
-        name="Detached Regions", min=0, default=0
-    )
+    loose_xray_component_count: IntProperty(name="Detached Regions", min=0, default=0)
     loose_xray_component_index: IntProperty(
         name="Current Detached Region", min=0, default=0
     )
@@ -292,6 +290,16 @@ class QT_PG_settings(PropertyGroup):
         min=0,
         max=20,
         default=3,
+    )
+    paint_mirror_x: BoolProperty(
+        name="Mirror X",
+        description="Paint one half; the other half is mirrored across local X",
+        default=False,
+    )
+    paint_bridge: BoolProperty(
+        name="Join Patches",
+        description="Join facing borders of separate strokes, with transitions",
+        default=True,
     )
     paint_weld: BoolProperty(
         name="Weld to Open Edges",

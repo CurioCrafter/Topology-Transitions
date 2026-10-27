@@ -12,50 +12,68 @@ direction of the edge loops.
 2. Select the low-poly retopology mesh (it may be empty) and enter Edit Mode.
 3. Pick a **Cell Size** (quad edge length) or leave it at zero to derive it from
    your first brush dab.
-4. Click **Start Surface Paint** and paint over the target with LMB.
+4. Click **Surface Paint** and paint over the target with LMB.
    Ctrl+LMB erases, `[` and `]` change the brush, `-` and `=` change the cell,
-   R / Shift+R rotate the edge flow by 15 degrees, Backspace removes the last
-   stroke, Enter builds, Esc or right-click cancels.
+   R / Shift+R rotate the edge flow by 15 degrees, X toggles Mirror X, J toggles
+   Join Patches, Backspace removes the last stroke, Enter builds, Esc or
+   right-click cancels.
 
-The green preview is the exact grid that will be built. The overlay also counts
-quads, vertices, and interior poles, and reports cells that stopped because the
-surface bent too far or wrapped back onto the patch.
+The green preview is the exact grid that will be built. The coach card counts
+quads, vertices, poles and joins, and reports cells that stopped because the
+surface folded back or two patches met.
+
+![Surface Paint across the brow ridge, with the live coach card](images/09-surface-paint-live.png)
 
 ![Painted coverage filled with a surface-following quad grid](images/06-surface-paint.png)
 
 ## How the grid is built
 
 The algorithm lives in `topology_transitions/paint_grid.py` and has no Blender
-dependency, so it is unit-tested on analytic planes and spheres.
+dependency, so it is unit-tested on analytic planes, spheres and a sharp ridge.
 
-1. **Coverage.** Every paint dab is a sphere on the surface; erase dabs subtract
-   from it in painting order.
-2. **Lattice growth.** Starting at the first dab of each stroke (unless an
-   earlier patch already reached it), a square lattice is grown
-   breadth-first. Each new node steps one cell along its parent's tangent frame,
-   is projected to the nearest surface point, and receives the frame by
-   parallel transport (the old direction with its normal component removed).
-   Nodes outside the coverage are never created.
-3. **Guards.** A node is rejected when the surface normal flips (a fold or the
-   far side of a thin part), when it would sit closer than half a cell or
-   further than two cells from an existing lattice neighbour (curvature
-   distortion), or when it lands on a different part of the lattice (a patch
-   painted all the way around a cylinder). The patch stops there instead of
-   producing slivers or overlaps.
-4. **Faces.** Each lattice square whose four corners exist becomes one quad,
-   wound so its normal agrees with the surface.
-5. **Relax.** Interior vertices are moved halfway toward the average of their
-   four neighbours and projected back onto the surface a few times, which
-   evens out cells that curvature stretched.
-6. **Weld.** With **Weld to Open Edges** on, border vertices merge onto open
+1. **Coverage.** Every dab covers a disc-shaped column along the surface normal
+   under the brush (1.5 brush radii deep), so the floor of a socket or crease
+   the brush passes over is painted too. Erase dabs subtract in painting order.
+2. **Surface walking.** Every step of the grid walks one cell over the surface
+   in four sub-steps. After each sub-step the point is projected back to the
+   surface and the heading is re-aimed along the surface actually travelled,
+   so the walk turns with a crease such as a brow ridge instead of cutting
+   through it. The tangent frame is carried along by parallel transport.
+3. **Spine and ribs.** Each stroke starts its own patch (unless an earlier
+   patch already reached it). A spine walks from the stroke's first dab along
+   the stroke direction in both directions, and every spine vertex sends ribs
+   out at right angles. Each vertex therefore has exactly one walk defining
+   it, so curvature cannot make two paths disagree about where it belongs.
+   Plain outward growth then fills any painted area the ribs did not reach.
+4. **Guards.** A vertex is rejected when the surface turns back on itself (the
+   far side of a thin part), when it would sit closer than 0.35 or further than
+   2 cells from a grid neighbour, or when it lands on another part of the grid.
+   The patch stops there instead of producing slivers or overlaps.
+5. **Cleanup.** Every grid square with four corners becomes a quad. One-cell
+   spurs with three open sides are removed, and where two cells touch only at
+   a corner the smaller fan is dropped, so no vertex is non-manifold.
+6. **Joins.** With **Join Patches** on, facing borders of different patches
+   (within 4.5 cells) are connected. Equal edge counts get a plain strip of
+   quads; different counts use the add-on's own transition templates: as many
+   n+2 -> n sections as needed, plus one 2 -> 1 cell for an odd difference.
+7. **Relax.** Inner vertices move halfway toward their neighbours and border
+   vertices a third of the way toward their two border neighbours, both
+   projected back onto the surface. Border smoothing rounds off the staircase a
+   square grid leaves along a painted outline. A move that would fold a quad is
+   skipped, and a join that still folds after relaxing is removed.
+8. **Mirror.** With **Mirror X** the grid also grows into the reflected paint,
+   is clipped at the retopo object's local YZ plane, the seam vertices are
+   snapped onto the plane, and the reflected half shares them.
+9. **Weld.** With **Weld to Open Edges** on, border vertices merge onto open
    boundary vertices of the existing mesh within about a third of a cell. If
    welding would break the mesh, the patch is built unwelded and a warning is
    shown.
 
 ### Why this teaches good topology
 
-On a regular grid every inner vertex has exactly four edges, so the painted
-patch introduces no poles. Poles (3- or 5-edge vertices) are where edge flow
+On a regular grid every inner vertex has exactly four edges, so a single
+painted patch introduces no poles; only joins between patches add them, and
+the coach card counts them. Poles (3- or 5-edge vertices) are where edge flow
 changes direction; you add them deliberately with the transition tools
 (5 -> 3, 3 -> 1, and so on) rather than getting them by accident.
 
@@ -127,11 +145,10 @@ inspecting or preparing the workflow.
 
 The next high-value steps are deliberately separate from what is implemented:
 
-1. Paint several patches in one session and stitch their facing borders with
-   the transition tools when their cell counts differ.
-2. Let cell size follow source curvature so tight areas get smaller quads.
-3. Clip painting at a symmetry plane and mirror the result.
-4. Expand the ray diagnostic to face-area sampling, backface/dual-hit classes,
+1. Let cell size follow source curvature so tight areas get smaller quads.
+2. Join strongly diagonal patches, which are currently left open when the
+   join would fold.
+3. Expand the ray diagnostic to face-area sampling, backface/dual-hit classes,
    cage self-intersection warnings, and a material preview of the baked image.
-5. Transfer or interpolate UV, color, crease, and other custom data into newly
+4. Transfer or interpolate UV, color, crease, and other custom data into newly
    painted topology instead of initializing those layers with defaults.

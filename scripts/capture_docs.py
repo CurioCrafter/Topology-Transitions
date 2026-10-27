@@ -520,7 +520,8 @@ def guarded(callback):
 
 
 def setup() -> float:
-    ui_module.QT_PT_sidebar.bl_category = "Item"
+    for panel in ui_module.CLASSES:
+        panel.bl_category = "Item"
     topology_transitions.register()
     maximize_view()
     if ARGS.shot == "before":

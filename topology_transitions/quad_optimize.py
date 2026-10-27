@@ -81,9 +81,7 @@ def choose_loop_batch(candidates: tuple[LoopChoice, ...]) -> tuple[int, ...]:
         included: tuple[int, ...] | None = None
         for identifier in path:
             next_included = (*excluded, identifier)
-            next_excluded = (
-                excluded if included is None else better(excluded, included)
-            )
+            next_excluded = excluded if included is None else better(excluded, included)
             excluded, included = next_excluded, next_included
         return excluded if included is None else better(excluded, included)
 
@@ -124,13 +122,16 @@ def choose_loop_batch(candidates: tuple[LoopChoice, ...]) -> tuple[int, ...]:
             frontier.extend(neighbors)
         pending.difference_update(component)
 
-        if max(
-            (
-                len(by_identifier[identifier].conflict_ids & component)
-                for identifier in component
-            ),
-            default=0,
-        ) <= 2:
+        if (
+            max(
+                (
+                    len(by_identifier[identifier].conflict_ids & component)
+                    for identifier in component
+                ),
+                default=0,
+            )
+            <= 2
+        ):
             ordered, is_cycle = ordered_component(component)
             if is_cycle:
                 without_first = solve_path(ordered[1:])

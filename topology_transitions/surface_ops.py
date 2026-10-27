@@ -91,9 +91,7 @@ class CageInspection:
     @property
     def ready(self) -> bool:
         return (
-            self.topology_matches
-            and self.geometry_matches
-            and self.transform_matches
+            self.topology_matches and self.geometry_matches and self.transform_matches
         )
 
 
@@ -294,13 +292,10 @@ def find_bake_cage(source: Object) -> Object | None:
     candidates = [
         obj
         for obj in bpy.data.objects
-        if obj.type == "MESH"
-        and bool(obj.get(CAGE_ROLE_KEY, False))
+        if obj.type == "MESH" and bool(obj.get(CAGE_ROLE_KEY, False))
     ]
     matches = [
-        obj
-        for obj in candidates
-        if obj.get(CAGE_SOURCE_NAME_KEY, "") == source.name
+        obj for obj in candidates if obj.get(CAGE_SOURCE_NAME_KEY, "") == source.name
     ]
     if not matches:
         data_matches = [
@@ -362,8 +357,7 @@ def inspect_bake_cage(source: Object, cage: Object | None = None) -> CageInspect
     )
     geometry_matches = stored_geometry == source_geometry
     transform_matches = all(
-        abs(cage.matrix_world[row][column] - source.matrix_world[row][column])
-        <= 1.0e-7
+        abs(cage.matrix_world[row][column] - source.matrix_world[row][column]) <= 1.0e-7
         for row in range(4)
         for column in range(4)
     )

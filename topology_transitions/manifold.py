@@ -158,9 +158,7 @@ def _face_topology_issues(
 
     edge_by_vertices: dict[frozenset[int], int] = {}
     edge_faces: dict[int, list[int]] = {edge_id: [] for edge_id in edge_vertices}
-    edge_directions: dict[int, list[int]] = {
-        edge_id: [] for edge_id in edge_vertices
-    }
+    edge_directions: dict[int, list[int]] = {edge_id: [] for edge_id in edge_vertices}
     vertex_faces: dict[int, set[int]] = {vertex_id: set() for vertex_id in vertex_ids}
 
     for edge_id, vertices in edge_vertices.items():
@@ -264,13 +262,11 @@ def analyze_manifold(
     inconsistent_winding_edges: frozenset[int] = frozenset()
     disconnected_fan_vertices: frozenset[int] = frozenset()
     if face_vertices is not None:
-        inconsistent_winding_edges, disconnected_fan_vertices = (
-            _face_topology_issues(
-                edge_vertices,
-                edge_face_counts,
-                all_vertex_ids,
-                face_vertices,
-            )
+        inconsistent_winding_edges, disconnected_fan_vertices = _face_topology_issues(
+            edge_vertices,
+            edge_face_counts,
+            all_vertex_ids,
+            face_vertices,
         )
     open_edges = frozenset(
         edge_id for edge_id, count in edge_face_counts.items() if count == 1
@@ -330,9 +326,10 @@ def analyze_manifold(
             )
         )
 
-    handled_fan_vertices = set().union(
-        *(component.vertex_ids for component in components)
-    ) & disconnected_fan_vertices
+    handled_fan_vertices = (
+        set().union(*(component.vertex_ids for component in components))
+        & disconnected_fan_vertices
+    )
     components.extend(
         ManifoldIssueComponent(
             frozenset(), frozenset({vertex_id}), "Disconnected Face Fans"

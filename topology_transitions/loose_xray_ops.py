@@ -36,10 +36,7 @@ def _edit_mesh(context: Any) -> tuple[Any, Any]:
 
 def _components(bm: Any) -> tuple[tuple[int, ...], ...]:
     return detached_face_components(
-        {
-            face.index: tuple(vertex.index for vertex in face.verts)
-            for face in bm.faces
-        }
+        {face.index: tuple(vertex.index for vertex in face.verts) for face in bm.faces}
     )
 
 
@@ -98,9 +95,7 @@ def _build_overlay(
     mesh = bpy.data.meshes.new(f"{OVERLAY_NAME} Mesh")
     mesh.from_pydata(vertices, (), faces)
     idle = _red_material(MATERIAL_NAME, opacity, 0.75)
-    active = _red_material(
-        ACTIVE_MATERIAL_NAME, min(0.95, opacity + 0.25), 1.0
-    )
+    active = _red_material(ACTIVE_MATERIAL_NAME, min(0.95, opacity + 0.25), 1.0)
     mesh.materials.append(idle)
     mesh.materials.append(active)
     for polygon, source_face in zip(mesh.polygons, error_faces):
@@ -178,9 +173,7 @@ class QT_OT_inspect_detached_faces(Operator):
     )
     bl_options = {"REGISTER", "UNDO"}
 
-    opacity: FloatProperty(
-        name="Red X-Ray Opacity", min=0.05, max=0.9, default=0.35
-    )
+    opacity: FloatProperty(name="Red X-Ray Opacity", min=0.05, max=0.9, default=0.35)
 
     @classmethod
     def poll(cls, context: Any) -> bool:
@@ -210,9 +203,7 @@ class QT_OT_step_detached_faces(Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     direction: IntProperty(name="Direction", min=-1, max=1, default=1)
-    opacity: FloatProperty(
-        name="Red X-Ray Opacity", min=0.05, max=0.9, default=0.35
-    )
+    opacity: FloatProperty(name="Red X-Ray Opacity", min=0.05, max=0.9, default=0.35)
 
     @classmethod
     def poll(cls, context: Any) -> bool:

@@ -3,21 +3,36 @@
 ## 0.10.0 - 2026-10-27
 
 - Added **Surface Paint Quads**: paint coverage on a high-poly target and fill
-  it with a surface-following all-quad grid. The lattice grows breadth-first
-  from the start of every stroke with parallel-transported tangent frames, stops at folds,
-  curvature distortion, and wrap-around overlaps, then relaxes interior
-  vertices on the surface. Border vertices can weld onto open edges of the
-  existing mesh, with an automatic unwelded fallback if welding would break it.
-- The paint overlay teaches as it works: each stroke sets its edge-loop
-  direction, live counts show quads, vertices, and interior poles, and stopped
-  cells are explained.
-- Every paint stroke starts its own grid patch, so separate painted areas all
-  fill. Preview lines are lifted off the surface so they draw solid.
+  it with a surface-following all-quad grid.
+  - Brush dabs cover a disc-shaped column along the surface normal, so the
+    floor of a socket or crease under the brush is painted too.
+  - Each stroke grows a spine along its direction and ribs at right angles,
+    walking over the surface in sub-steps so the grid bends over creases such
+    as a brow ridge instead of stopping at them; outward growth fills the rest.
+  - Border cleanup removes one-cell spurs and corner-only contacts, and border
+    vertices are smoothed along the outline instead of staying stair-stepped.
+  - **Join Patches** connects facing borders of separate strokes with quads,
+    using the add-on's own n -> n-2 and 2 -> 1 transition templates where loop
+    counts differ; joins that would fold are dropped.
+  - **Mirror X** paints one half and reflects it across the retopo object's
+    local X with a shared seam.
+  - Smoothing never folds a quad, faces are wound consistently, and border
+    vertices can weld onto open edges with an unwelded fallback.
+- Added the **Topology Lens**: a live overlay that colours 3-, 5- and 6+ poles,
+  doublets, border poles, triangles and n-gons while you keep editing, with a
+  hover card that names each vertex, highlights its edges and explains it.
+- Added coloured in-viewport coach cards with stat chips and key caps for the
+  modal tools.
+- Reorganised the sidebar into a **Start Here** card (Find Holes, Topology
+  Lens, Surface Paint, and a red/green setup checklist) followed by collapsible
+  colour-coded sections: Inspect, Surface Paint, Transitions, Repair &
+  Optimize, Flow Browser, Merge & Cleanup, and Surface & Bake.
 - Removed the experimental boundary-chain strip drawing (Connected Multi-Strip
   and Transition Ribbon). Loop-count transitions remain available through
   Apply Transition.
-- Added pure unit tests for the lattice on planes, sphere caps, a whole sphere,
-  erase dabs, and flow direction, plus Blender and installed-ZIP weld checks.
+- Added pure tests for creases, cleanup, joins, mirroring and erase dabs, plus
+  Blender checks for welding, mirroring and Lens pole counts, and a
+  reproducible README screenshot script.
 
 ## 0.9.3 - 2026-08-23
 

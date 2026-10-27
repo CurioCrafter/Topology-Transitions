@@ -1,23 +1,33 @@
 # Topology Transitions
 
-Topology Transitions is led by **Find Holes / Check Manifold**, a focused
-topological mesh-integrity check for finding open boundaries (including hole
-rims), invalid edge face counts or winding, disconnected face fans, and loose
-geometry. It selects the exact problem elements and lets you step through each
-connected issue in the 3D View.
+**A Blender add-on that teaches topology while you build it.** Paint quads
+straight onto a high-poly surface, see every pole light up as you edit, and
+place real loop-count transitions (5 -> 3, 3 -> 1, ...) exactly where the
+density needs to change.
 
-The add-on also builds guided all-quad loop reductions and expansions, repairs
-supported topology defects, reads broad quad-flow regions, prepares
-shrinkwrapped retopology for selected-to-active baking, and paints
-surface-following quad grids onto a high-poly target.
+![The Topology Lens explaining a 5-pole on a low-poly head](docs/images/13-topology-lens.png)
 
-Supported transition directions are 5 -> 3, 3 -> 5, 3 -> 1, 1 -> 3,
-4 -> 2, 2 -> 4, 1 -> 2, and 2 -> 1. Pole placement, mirroring, surface
-conformity, relaxation, and Catmull-Clark preview remain user-controlled.
+| | Tool | What it does for you |
+| --- | --- | --- |
+| 🔵 | **Find Holes / Check Manifold** | Finds open edges, hole rims, bad winding, wire edges and stray vertices, and steps you through each problem. |
+| 🔵 | **Topology Lens** | A live overlay: amber dots are 3-poles, magenta 5-poles, red 6+ poles and doublets; triangles and n-gons are tinted. Hover any dot to learn what it does to edge flow. You keep editing while it is on. |
+| 🟢 | **Surface Paint** | Paint where quads should go. A grid that walks over creases fills the paint, separate strokes join with transitions, and Mirror X paints both halves. |
+| 🩷 | **Transitions** | Replace a quad patch with an all-quad 5 -> 3, 3 -> 5, 3 -> 1, 1 -> 3, 4 -> 2, 2 -> 4, 1 -> 2 or 2 -> 1 transition. |
+| 🟠 | **Repair & Optimize** | Turn selected tris and n-gons into quads; remove repetitive remesher loops without creating triangles. |
+| 🟣 | **Flow Browser** | Scroll through pole-bounded quad regions to read how a mesh flows. |
+| 🟡 | **Merge & Cleanup** | Directional merge, delete faces by axis, and connect two meshes. |
+| 🔴 | **Surface & Bake** | Live Shrinkwrap, exact bake cages, and a ray preview before you bake. |
+
+Each colour matches a collapsible section of the sidebar, so the panel stays
+short: open only the step you are on.
 
 ## Start Here: Find Holes and Check Manifold Issues
 
-In Edit Mode, run **Find Holes / Check Manifold**, the first tool in the
+The sidebar opens with a **Start Here** card: three big buttons (Find Holes,
+Topology Lens, Surface Paint) and a checklist that turns red until Edit Mode is
+on and a Surface Target is picked.
+
+In Edit Mode, run **Find Holes / Check Manifold**, the first button in the
 sidebar. It selects:
 
 - open boundary edges, including the rims of holes;
@@ -27,12 +37,12 @@ sidebar. It selects:
 - isolated vertices; and
 - vertices whose incident faces split into disconnected fans.
 
-**Previous Issue** and **Next Issue** isolate and frame one connected problem
-area at a time. A clean result means none of those tracked topological issue
-classes were found. Open boundaries can be intentional, such as the outside of
-a retopology sheet, so the check reports them without assuming every boundary
-needs repair. This is a topology check; it does not test geometric
-self-intersections.
+**Previous Issue** and **Next Issue** (in the **Inspect** section) isolate and
+frame one connected problem area at a time. A clean result means none of those
+tracked topological issue classes were found. Open boundaries can be
+intentional, such as the outside of a retopology sheet, so the check reports
+them without assuming every boundary needs repair. This is a topology check;
+it does not test geometric self-intersections.
 
 For supported automatic fixes, use **Auto Solve All Non-Manifold Areas** below
 the diagnostic. That action changes topology; its safeguards and limits are
@@ -46,6 +56,35 @@ described under [Automatic Non-Manifold Repair](#automatic-non-manifold-repair).
 3. Open the top-right menu, choose **Install from Disk**, and select the ZIP.
 4. Open **3D View -> Sidebar -> Quad Transition**.
 
+## The sidebar
+
+<img src="docs/images/12-sidebar.png" alt="The sidebar's Surface Paint section and the coloured section headers" align="right" width="250">
+
+The panel is a **Start Here** card followed by coloured sections. **Inspect**
+and **Surface Paint** start open; the rest stay closed until you need them.
+Missing setup is shown in red (for example a Surface Target that has not been
+picked yet), and the Start button stays disabled until it is fixed.
+
+Toggles such as **Mirror X** and **Join Patches** light up when on, and every
+modal tool lists its keys on screen as key caps, so nothing has to be
+memorised.
+
+<br clear="right">
+
+## Topology Lens
+
+Click **Topology Lens** in Start Here. It stays on while you model.
+
+- **Amber** dots: 3-poles (N-poles). Loops turn a corner here.
+- **Magenta** dots: 5-poles (E-poles). An extra loop branches off here.
+- **Red** dots: 6+ poles and doublets, which pinch under subdivision.
+- **Violet** dots: poles on an open border.
+- **Amber / red tint**: triangles / n-gons.
+
+The card in the corner counts quads, tris, n-gons and each pole type. Hover
+any vertex for a card that names it, highlights its edges, and gives a tip on
+what to do with it. Press Esc or click the button again to turn the lens off.
+
 ## Surface Paint Quads
 
 Paint where you want topology on a high-poly mesh and get a clean quad grid
@@ -53,39 +92,46 @@ that follows the surface:
 
 1. Choose the high-poly mesh as **Surface Target** and enter Edit Mode on your
    low-poly mesh (an empty mesh works).
-2. Click **Start Surface Paint**, paint with LMB, erase with Ctrl+LMB.
+2. Click **Surface Paint**, paint with LMB, erase with Ctrl+LMB.
 3. Press Enter to build. Each stroke's direction becomes its edge-loop
    direction; R rotates it in 15-degree steps.
 
-The overlay explains the result while you paint: quad and vertex counts, why a
-regular grid adds no poles, and where curvature stopped the grid. Border
-vertices can weld onto open edges of the existing mesh. The algorithm is
-described in [docs/SURFACE_PAINT_AND_BAKING.md](docs/SURFACE_PAINT_AND_BAKING.md).
+While you paint, the green preview is exactly what Enter will build, and the
+coach card counts quads, poles and joins live:
 
-Painting live: blue lines are your strokes, the red ring is an erase dab, and
-the green grid is exactly what Enter will build. The overlay at the bottom
-left explains the result as you paint.
+![Surface Paint across the brow ridge, with the live coach card](docs/images/09-surface-paint-live.png)
 
-![Surface Paint in progress on a high-poly head, with the teaching overlay](docs/images/09-surface-paint-live.png)
-
-After pressing Enter, the quads are added to the retopo mesh and selected:
+The forehead stroke walks over the brow ridge as one patch. The second stroke
+on the cheek became its own patch, and **Join Patches** connected the two with
+a transition: the magenta pole count shows the poles that join added on
+purpose. After Enter the quads are added to the mesh and selected:
 
 ![Built Surface Paint quads on the forehead and cheek](docs/images/10-surface-paint-result.png)
 
-R rotates the edge flow. The same strokes at +45 degrees give diagonal loops:
+**Mirror X** (or the X key) paints both halves. One short stroke on one side
+of the forehead gives a symmetric band with a shared centre seam:
 
-![The same strokes with the edge flow rotated 45 degrees](docs/images/11-surface-paint-flow-rotation.png)
+![One stroke with Mirror X becomes a symmetric forehead band](docs/images/11-surface-paint-mirror.png)
 
-The **Surface Paint Quads** section of the sidebar:
-
-![Surface Paint Quads sidebar section](docs/images/12-surface-paint-panel.png)
-
-On a sphere, one stroke fills a smooth cap:
+On a smooth sphere one stroke fills a clean cap:
 
 ![Painted coverage filled with a surface-following quad grid](docs/images/06-surface-paint.png)
 
-Sharp creases such as a brow ridge stop the grid, leaving jagged gaps. Paint
-each side of a crease as its own stroke.
+| Key | Action |
+| --- | --- |
+| LMB / Ctrl+LMB | Paint / erase |
+| `[` `]` | Brush size |
+| `-` `=` | Cell (quad) size |
+| R / Shift+R | Rotate edge flow 15 degrees |
+| X | Mirror X on/off |
+| J | Join Patches on/off |
+| Backspace | Undo the last stroke |
+| Enter / Esc | Build / cancel |
+
+Border vertices can weld onto open edges of the existing mesh. Deep sockets
+and very sharp folds still leave ragged edges or gaps: paint those areas as
+separate strokes, or use a smaller cell. How the grid is built is described in
+[docs/SURFACE_PAINT_AND_BAKING.md](docs/SURFACE_PAINT_AND_BAKING.md).
 
 ## Surface conformity and bake preview
 
@@ -416,6 +462,8 @@ orthographic, and camera-aligned views instead of using a fixed world axis.
 | Surface Target | Explicit high-poly mesh used for painting and vertex projection. |
 | Cell Size / Brush | Quad edge length (zero = from first dab) and brush radius in pixels. |
 | Flow / Relax | Edge-loop rotation and on-surface smoothing passes for Surface Paint. |
+| Mirror X / Join Patches | Paint one half and mirror it; join separate strokes with transitions. |
+| Topology Lens | Live colour-coded poles, tris and n-gons with hover explanations. |
 | Transition | Incoming and outgoing loop counts. |
 | Patch Axis | Uses the active boundary edge or the alternate patch axis. |
 | Reverse Flow | Swaps incoming and outgoing patch sides. |
@@ -481,6 +529,9 @@ blender.exe --background --factory-startup --python tests\blender_smoke.py
 python scripts\build_release.py
 ```
 
+README screenshots are reproducible with `scripts/capture_showcase.py` (see
+its docstring) and `scripts/capture_docs.py`.
+
 The Blender smoke is only accepted when it prints
 `QT_BLENDER_SMOKE_PASS`. `tests/installed_smoke.py` verifies the installed ZIP
 copy separately.
@@ -494,8 +545,12 @@ Key modules:
 - `direction_delete_ops.py`: selected-object face removal by world-axis normal;
 - `quad_flows.py` / `flow_ops.py`: pole-bounded regions, face bands, and overlay;
 - `manifold.py` / `manifold_ops.py`: pure diagnostics and Blender selection;
-- `paint_grid.py` / `surface_paint_ops.py`: painted coverage, parallel-transport
-  lattice growth, relaxation, modal overlay, and transactional welding;
+- `paint_grid.py` / `surface_paint_ops.py`: brush coverage, spine-and-rib
+  surface walking, border cleanup, transition joins, mirroring, relaxation, and
+  transactional welding;
+- `lens_ops.py`: the live Topology Lens overlay and hover explanations;
+- `hud.py`: the coloured in-viewport coach cards, chips and key caps;
+- `ui.py`: the Start Here card and the coloured sidebar sections;
 - `surface_ops.py`: live Shrinkwrap, exact-topology cages, and bake readiness;
 - `bake_preview_ops.py`: sampled green-hit/red-miss bake-ray visualization;
 - `examples.py`: true unequal-density atlas generation.

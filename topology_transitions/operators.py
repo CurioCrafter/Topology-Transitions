@@ -124,9 +124,9 @@ def _orientation(
     second: tuple[float, float],
     third: tuple[float, float],
 ) -> float:
-    return (second[0] - first[0]) * (third[1] - first[1]) - (
-        second[1] - first[1]
-    ) * (third[0] - first[0])
+    return (second[0] - first[0]) * (third[1] - first[1]) - (second[1] - first[1]) * (
+        third[0] - first[0]
+    )
 
 
 def _segments_cross(
@@ -139,10 +139,9 @@ def _segments_cross(
     second = _orientation(a, b, d)
     third = _orientation(c, d, a)
     fourth = _orientation(c, d, b)
-    return (
-        first * second < -(GEOMETRY_EPSILON * GEOMETRY_EPSILON)
-        and third * fourth < -(GEOMETRY_EPSILON * GEOMETRY_EPSILON)
-    )
+    return first * second < -(
+        GEOMETRY_EPSILON * GEOMETRY_EPSILON
+    ) and third * fourth < -(GEOMETRY_EPSILON * GEOMETRY_EPSILON)
 
 
 def _validate_fitted_faces(

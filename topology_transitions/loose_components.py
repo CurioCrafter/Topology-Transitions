@@ -16,9 +16,7 @@ def find_face_components(
         for first, second in zip(values, values[1:] + values[:1]):
             edge_faces[tuple(sorted((first, second)))].append(face_id)
 
-    adjacency: dict[int, set[int]] = {
-        face_id: set() for face_id in face_vertices
-    }
+    adjacency: dict[int, set[int]] = {face_id: set() for face_id in face_vertices}
     for linked_faces in edge_faces.values():
         for face_id in linked_faces:
             adjacency[face_id].update(
