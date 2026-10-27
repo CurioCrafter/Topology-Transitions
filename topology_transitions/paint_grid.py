@@ -1,11 +1,11 @@
 """Pure lattice growth for Surface Paint: painted coverage becomes a quad grid.
 
 The user paints coverage dabs on a high-poly surface. A square lattice is then
-grown outward from the first dab: each lattice node steps one cell along its
+grown outward from the start of each stroke: each lattice node steps one cell along its
 parent's tangent frame, is projected back onto the surface, and carries the
 frame across by parallel transport. Nodes outside the painted coverage are not
-created, so the painted shape decides where quads exist and the first stroke's
-direction decides which way the edge loops run. A short tangential relaxation
+created, so the painted shape decides where quads exist and each stroke's
+direction decides which way its edge loops run. A short tangential relaxation
 then evens out the cell shapes that curvature distorts.
 """
 
@@ -19,10 +19,10 @@ from math import cos, floor, sin, sqrt
 from .core import TransitionError
 
 Point3 = tuple[float, float, float]
-Node = tuple[int, int]
+Node = tuple[int, int, int]  # (patch, i, j)
 Projector = Callable[[Point3], "tuple[Point3, Point3] | None"]
 
-STEPS: tuple[Node, ...] = ((1, 0), (-1, 0), (0, 1), (0, -1))
+STEPS: tuple[tuple[int, int], ...] = ((1, 0), (-1, 0), (0, 1), (0, -1))
 MAX_NODES = 20000
 MIN_NORMAL_AGREEMENT = 0.35
 COLLISION_FACTOR = 0.45
@@ -74,6 +74,13 @@ class Dab:
     center: Point3
     radius: float
     erase: bool = False
+
+
+@dataclass(frozen=True)
+class Seed:
+    point: Point3
+    normal: Point3
+    flow: Point3
 
 
 @dataclass(frozen=True)
@@ -134,32 +141,13 @@ class _SpatialHash:
         return False
 
 
-def grow_paint_grid(
-    dabs: Sequence[Dab],
-    *,
-    cell: float,
-    seed: Point3,
-    seed_normal: Point3,
-    flow_direction: Point3,
-    flow_angle: float,
-    project: Projector,
-    relax_iterations: int = 3,
-    max_nodes: int = MAX_NODES,
-) -> PaintGrid:
-    """Grow a surface-following square lattice inside the painted coverage."""
+def _shift(node: Node, di: int, dj: int) -> Node:
+    return (node[0], node[1] + di, node[2] + dj)
 
-    if cell <= 1.0e-9:
-        raise TransitionError("Surface Paint needs a positive cell size")
-    coverage = Coverage(dabs)
-    start = project(seed)
-    if start is None:
-        raise TransitionError("The first dab is not on the surface target")
-    origin, normal = start
-    normal = _normalized(normal) or _normalized(seed_normal)
-    if normal is None:
-        raise TransitionError("The surface has no stable normal under the first dab")
-    if not coverage.contains(origin):
-        raise TransitionError("The first dab was erased; paint again to start")
+
+def _frame(
+    normal: Point3, flow_direction: Point3, flow_angle: float
+) -> tuple[Point3, Point3]:
     u = _tangent(flow_direction, normal)
     if u is None:
         u = _tangent((1.0, 0.0, 0.0), normal) or _tangent((0.0, 1.0, 0.0), normal)
@@ -169,76 +157,116 @@ def grow_paint_grid(
             _add(_scale(u, cos(flow_angle)), _scale(v, sin(flow_angle))),
             _sub(_scale(v, cos(flow_angle)), _scale(u, sin(flow_angle))),
         )
+    return u, v
 
-    positions: dict[Node, Point3] = {(0, 0): origin}
-    normals: dict[Node, Point3] = {(0, 0): normal}
-    frames: dict[Node, tuple[Point3, Point3]] = {(0, 0): (u, v)}
+
+def grow_paint_grid(
+    dabs: Sequence[Dab],
+    *,
+    cell: float,
+    seeds: Sequence[Seed],
+    flow_angle: float,
+    project: Projector,
+    relax_iterations: int = 3,
+    max_nodes: int = MAX_NODES,
+) -> PaintGrid:
+    """Grow surface-following square lattices inside the painted coverage.
+
+    Every seed (one per paint stroke) starts its own lattice patch unless an
+    earlier patch already reached it, so separate painted areas all fill.
+    """
+
+    if cell <= 1.0e-9:
+        raise TransitionError("Surface Paint needs a positive cell size")
+    coverage = Coverage(dabs)
+    positions: dict[Node, Point3] = {}
+    normals: dict[Node, Point3] = {}
+    frames: dict[Node, tuple[Point3, Point3]] = {}
     occupied = _SpatialHash(cell)
-    occupied.add(origin)
     folds = overlaps = 0
-    queue: deque[Node] = deque([(0, 0)])
-    visited = {(0, 0)}
-    while queue:
-        node = queue.popleft()
-        base = positions[node]
-        base_u, base_v = frames[node]
-        for di, dj in STEPS:
-            neighbor = (node[0] + di, node[1] + dj)
-            if neighbor in visited:
-                continue
-            step = _add(_scale(base_u, di * cell), _scale(base_v, dj * cell))
-            hit = project(_add(base, step))
-            if hit is None:
-                continue
-            point, hit_normal = hit
-            hit_normal = _normalized(hit_normal)
-            if not coverage.contains(point):
-                continue
-            visited.add(neighbor)
-            if hit_normal is None or _dot(hit_normal, normals[node]) < (
-                MIN_NORMAL_AGREEMENT
-            ):
-                folds += 1
-                continue
-            lattice_neighbors = [
-                positions[(neighbor[0] + a, neighbor[1] + b)]
-                for a, b in STEPS
-                if (neighbor[0] + a, neighbor[1] + b) in positions
-            ]
-            # Curvature squeezes or stretches cells far from the seed; such a
-            # node would make a sliver quad, so the lattice stops there.
-            if any(
-                not 0.5 * cell <= _length(_sub(point, other)) <= 2.0 * cell
-                for other in lattice_neighbors
-            ):
-                folds += 1
-                continue
-            # ponytail: overlapping lattice fronts (painting fully around a
-            # cylinder) stop at a seam instead of being stitched together.
-            if occupied.near(point, cell * COLLISION_FACTOR, lattice_neighbors):
-                overlaps += 1
-                continue
-            new_u = _tangent(base_u, hit_normal)
-            if new_u is None:
-                folds += 1
-                continue
-            positions[neighbor] = point
-            normals[neighbor] = hit_normal
-            frames[neighbor] = (new_u, _cross(hit_normal, new_u))
-            occupied.add(point)
-            queue.append(neighbor)
-            if len(positions) > max_nodes:
-                raise TransitionError(
-                    f"Painted area needs more than {max_nodes} vertices; "
-                    "increase the cell size"
-                )
+    for patch, seed in enumerate(seeds):
+        start = project(seed.point)
+        if start is None:
+            continue
+        origin, normal = start
+        normal = _normalized(normal) or _normalized(seed.normal)
+        if (
+            normal is None
+            or not coverage.contains(origin)
+            or occupied.near(origin, cell, ())
+        ):
+            continue
+        root = (patch, 0, 0)
+        positions[root] = origin
+        normals[root] = normal
+        frames[root] = _frame(normal, seed.flow, flow_angle)
+        occupied.add(origin)
+        queue: deque[Node] = deque([root])
+        visited = {root}
+        while queue:
+            node = queue.popleft()
+            base = positions[node]
+            base_u, base_v = frames[node]
+            for di, dj in STEPS:
+                neighbor = _shift(node, di, dj)
+                if neighbor in visited:
+                    continue
+                step = _add(_scale(base_u, di * cell), _scale(base_v, dj * cell))
+                hit = project(_add(base, step))
+                if hit is None:
+                    continue
+                point, hit_normal = hit
+                hit_normal = _normalized(hit_normal)
+                if not coverage.contains(point):
+                    continue
+                visited.add(neighbor)
+                if hit_normal is None or _dot(hit_normal, normals[node]) < (
+                    MIN_NORMAL_AGREEMENT
+                ):
+                    folds += 1
+                    continue
+                lattice_neighbors = [
+                    positions[_shift(neighbor, a, b)]
+                    for a, b in STEPS
+                    if _shift(neighbor, a, b) in positions
+                ]
+                # Curvature squeezes or stretches cells far from the seed; such
+                # a node would make a sliver quad, so the lattice stops there.
+                if any(
+                    not 0.5 * cell <= _length(_sub(point, other)) <= 2.0 * cell
+                    for other in lattice_neighbors
+                ):
+                    folds += 1
+                    continue
+                # ponytail: where two lattice fronts meet (two patches, or one
+                # wrapped around a cylinder) they stop at an open seam; Weld
+                # closes it only where vertices happen to coincide.
+                if occupied.near(point, cell * COLLISION_FACTOR, lattice_neighbors):
+                    overlaps += 1
+                    continue
+                new_u = _tangent(base_u, hit_normal)
+                if new_u is None:
+                    folds += 1
+                    continue
+                positions[neighbor] = point
+                normals[neighbor] = hit_normal
+                frames[neighbor] = (new_u, _cross(hit_normal, new_u))
+                occupied.add(point)
+                queue.append(neighbor)
+                if len(positions) > max_nodes:
+                    raise TransitionError(
+                        f"Painted area needs more than {max_nodes} vertices; "
+                        "increase the cell size"
+                    )
+    if not positions:
+        raise TransitionError("No painted stroke starts on the surface target")
 
     faces = tuple(
-        ((i, j), (i + 1, j), (i + 1, j + 1), (i, j + 1))
-        for i, j in sorted(positions)
-        if (i + 1, j) in positions
-        and (i + 1, j + 1) in positions
-        and (i, j + 1) in positions
+        (node, _shift(node, 1, 0), _shift(node, 1, 1), _shift(node, 0, 1))
+        for node in sorted(positions)
+        if _shift(node, 1, 0) in positions
+        and _shift(node, 1, 1) in positions
+        and _shift(node, 0, 1) in positions
     )
     # Keep only nodes that belong to a face so no wire vertices are created.
     used = {node for face in faces for node in face}
@@ -260,7 +288,7 @@ def relax_grid(grid: PaintGrid, project: Projector, iterations: int) -> PaintGri
     for _ in range(iterations):
         updated = {}
         for node in interior:
-            neighbors = [positions[(node[0] + a, node[1] + b)] for a, b in STEPS]
+            neighbors = [positions[_shift(node, a, b)] for a, b in STEPS]
             average = _scale(
                 _add(
                     _add(neighbors[0], neighbors[1]), _add(neighbors[2], neighbors[3])

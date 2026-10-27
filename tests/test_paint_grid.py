@@ -12,6 +12,7 @@ if str(ROOT) not in sys.path:
 from topology_transitions.core import TransitionError  # noqa: E402
 from topology_transitions.paint_grid import (  # noqa: E402
     Dab,
+    Seed,
     grid_report,
     grow_paint_grid,
 )
@@ -41,17 +42,14 @@ class PaintGridTests(unittest.TestCase):
         grid = grow_paint_grid(
             [Dab((0.0, 0.0, 0.0), 1.0)],
             cell=0.1,
-            seed=(0.0, 0.0, 0.0),
-            seed_normal=(0.0, 0.0, 1.0),
-            flow_direction=(1.0, 0.0, 0.0),
+            seeds=[Seed((0.0, 0.0, 0.0), (0.0, 0.0, 1.0), (1.0, 0.0, 0.0))],
             flow_angle=0.0,
             project=plane,
         )
         self.assertAlmostEqual(len(grid.faces), pi * 100, delta=40)
         self.assertTrue(all(count <= 2 for count in edges_of(grid.faces).values()))
         self.assertEqual(grid_report(grid)["interior_poles"], 0)
-        for i, j in grid.positions:
-            x, y, z = grid.positions[(i, j)]
+        for x, y, z in grid.positions.values():
             self.assertAlmostEqual(z, 0.0)
             self.assertLessEqual(x * x + y * y, 1.0 + 1.0e-9)
 
@@ -59,22 +57,18 @@ class PaintGridTests(unittest.TestCase):
         grid = grow_paint_grid(
             [Dab((0.0, 0.0, 0.0), 0.5)],
             cell=0.1,
-            seed=(0.0, 0.0, 0.0),
-            seed_normal=(0.0, 0.0, 1.0),
-            flow_direction=(1.0, 1.0, 0.0),
+            seeds=[Seed((0.0, 0.0, 0.0), (0.0, 0.0, 1.0), (1.0, 1.0, 0.0))],
             flow_angle=0.0,
             project=plane,
             relax_iterations=0,
         )
-        x, y, _ = grid.positions[(1, 0)]
+        x, y, _ = grid.positions[(0, 1, 0)]
         self.assertAlmostEqual(x, y)
 
     def test_erase_dab_cuts_a_hole(self) -> None:
         kwargs = dict(
             cell=0.1,
-            seed=(-0.8, 0.0, 0.0),
-            seed_normal=(0.0, 0.0, 1.0),
-            flow_direction=(1.0, 0.0, 0.0),
+            seeds=[Seed((-0.8, 0.0, 0.0), (0.0, 0.0, 1.0), (1.0, 0.0, 0.0))],
             flow_angle=0.0,
             project=plane,
         )
@@ -89,9 +83,7 @@ class PaintGridTests(unittest.TestCase):
         grid = grow_paint_grid(
             [Dab((0.0, 0.0, 1.0), 0.8)],
             cell=0.08,
-            seed=(0.0, 0.0, 1.0),
-            seed_normal=(0.0, 0.0, 1.0),
-            flow_direction=(1.0, 0.0, 0.0),
+            seeds=[Seed((0.0, 0.0, 1.0), (0.0, 0.0, 1.0), (1.0, 0.0, 0.0))],
             flow_angle=0.0,
             project=sphere,
         )
@@ -113,9 +105,7 @@ class PaintGridTests(unittest.TestCase):
         grid = grow_paint_grid(
             [Dab((0.0, 0.0, 0.0), 2.0)],
             cell=0.2,
-            seed=(0.0, 0.0, 1.0),
-            seed_normal=(0.0, 0.0, 1.0),
-            flow_direction=(1.0, 0.0, 0.0),
+            seeds=[Seed((0.0, 0.0, 1.0), (0.0, 0.0, 1.0), (1.0, 0.0, 0.0))],
             flow_angle=0.0,
             project=sphere,
         )
@@ -126,14 +116,27 @@ class PaintGridTests(unittest.TestCase):
                 distance = sqrt(sum((a - b) ** 2 for a, b in zip(first, second)))
                 self.assertGreater(distance, 0.2 * 0.3)
 
+    def test_separate_strokes_each_get_a_patch(self) -> None:
+        dabs = [Dab((0.0, 0.0, 0.0), 0.5), Dab((3.0, 0.0, 0.0), 0.5)]
+        seeds = [
+            Seed((0.0, 0.0, 0.0), (0.0, 0.0, 1.0), (1.0, 0.0, 0.0)),
+            Seed((3.0, 0.0, 0.0), (0.0, 0.0, 1.0), (1.0, 1.0, 0.0)),
+            Seed((0.1, 0.0, 0.0), (0.0, 0.0, 1.0), (1.0, 0.0, 0.0)),
+        ]
+        grid = grow_paint_grid(
+            dabs, cell=0.1, seeds=seeds, flow_angle=0.0, project=plane
+        )
+        patches = {node[0] for node in grid.positions}
+        self.assertEqual(patches, {0, 1})
+        x, y, _ = grid.positions[(1, 1, 0)]
+        self.assertAlmostEqual(x - 3.0, y)
+
     def test_erased_seed_is_rejected(self) -> None:
         with self.assertRaises(TransitionError):
             grow_paint_grid(
                 [Dab((0.0, 0.0, 0.0), 1.0), Dab((0.0, 0.0, 0.0), 2.0, erase=True)],
                 cell=0.1,
-                seed=(0.0, 0.0, 0.0),
-                seed_normal=(0.0, 0.0, 1.0),
-                flow_direction=(1.0, 0.0, 0.0),
+                seeds=[Seed((0.0, 0.0, 0.0), (0.0, 0.0, 1.0), (1.0, 0.0, 0.0))],
                 flow_angle=0.0,
                 project=plane,
             )

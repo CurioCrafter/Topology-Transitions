@@ -2,7 +2,7 @@
 
 **Surface Paint Quads** lets you paint *where* topology should go on a
 high-poly mesh. The painted area is filled with a regular quad grid that
-follows the surface, and the direction of your first stroke becomes the
+follows the surface, and the direction of each stroke becomes the
 direction of the edge loops.
 
 ## Paint a quad patch
@@ -30,7 +30,8 @@ dependency, so it is unit-tested on analytic planes and spheres.
 
 1. **Coverage.** Every paint dab is a sphere on the surface; erase dabs subtract
    from it in painting order.
-2. **Lattice growth.** Starting at the first dab, a square lattice is grown
+2. **Lattice growth.** Starting at the first dab of each stroke (unless an
+   earlier patch already reached it), a square lattice is grown
    breadth-first. Each new node steps one cell along its parent's tangent frame,
    is projected to the nearest surface point, and receives the frame by
    parallel transport (the old direction with its normal component removed).

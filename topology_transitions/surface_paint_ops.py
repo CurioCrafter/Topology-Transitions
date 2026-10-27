@@ -18,7 +18,7 @@ from mathutils import Vector
 
 from .core import TransitionError
 from .edit_mesh import restore_bmesh
-from .paint_grid import Dab, PaintGrid, grid_report, grow_paint_grid
+from .paint_grid import Dab, PaintGrid, Seed, grid_report, grow_paint_grid
 
 AUTO_CELL_FACTOR = 0.4
 WELD_FACTOR = 0.35
@@ -92,17 +92,28 @@ def _flatten(strokes: list[list[Dab]]) -> list[Dab]:
     return [dab for stroke in strokes for dab in stroke]
 
 
-def _seed_and_flow(
+def _seeds(
     strokes: list[list[Dab]], normals: list[list[Vector]], fallback: Vector
-) -> tuple[Vector, Vector, Vector]:
+) -> list[Seed]:
+    """One lattice seed per paint stroke, oriented along that stroke."""
+
+    seeds = []
     for stroke, stroke_normals in zip(strokes, normals, strict=True):
-        if stroke and not stroke[0].erase:
-            seed = Vector(stroke[0].center)
-            flow = Vector(stroke[-1].center) - seed
-            if flow.length <= stroke[0].radius * 0.5:
-                flow = fallback.copy()
-            return seed, stroke_normals[0], flow
-    raise TransitionError("Paint at least one stroke on the surface target")
+        if not stroke or stroke[0].erase:
+            continue
+        start = Vector(stroke[0].center)
+        flow = Vector(stroke[-1].center) - start
+        if flow.length <= stroke[0].radius * 0.5:
+            flow = fallback
+        seeds.append(Seed(tuple(start), tuple(stroke_normals[0]), tuple(flow)))
+    if not seeds:
+        raise TransitionError("Paint at least one stroke on the surface target")
+    return seeds
+
+
+def _auto_cell(strokes: list[list[Dab]]) -> float:
+    first = next(stroke[0] for stroke in strokes if stroke and not stroke[0].erase)
+    return first.radius * AUTO_CELL_FACTOR
 
 
 def plan_surface_paint(
@@ -115,15 +126,13 @@ def plan_surface_paint(
     relax_iterations: int,
     fallback_flow: Vector,
 ) -> PaintGrid:
-    seed, seed_normal, flow = _seed_and_flow(strokes, normals, fallback_flow)
+    seeds = _seeds(strokes, normals, fallback_flow)
     if cell <= 0.0:
-        cell = strokes[0][0].radius * AUTO_CELL_FACTOR
+        cell = _auto_cell(strokes)
     return grow_paint_grid(
         _flatten(strokes),
         cell=cell,
-        seed=tuple(seed),
-        seed_normal=tuple(seed_normal),
-        flow_direction=tuple(flow),
+        seeds=seeds,
         flow_angle=flow_angle,
         project=surface.projector(cell * 2.0),
         relax_iterations=relax_iterations,
@@ -329,9 +338,12 @@ class QT_OT_surface_paint(Operator):
         self._normals[-1].append(normal)
 
     def _cell(self) -> float:
-        if self.cell_size > 0.0 or not self._strokes:
+        if self.cell_size > 0.0:
             return self.cell_size
-        return self._strokes[0][0].radius * AUTO_CELL_FACTOR
+        try:
+            return _auto_cell(self._strokes)
+        except StopIteration:
+            return 0.0
 
     def _replan(self) -> None:
         self._grid = None
@@ -357,15 +369,29 @@ class QT_OT_surface_paint(Operator):
         line_shader = gpu.shader.from_builtin("POLYLINE_UNIFORM_COLOR")
         fill_shader = gpu.shader.from_builtin("UNIFORM_COLOR")
         viewport = gpu.state.viewport_get()
-        paint, erase = [], []
+        # Lift overlays off the surface so the depth test does not dash them.
+        paths, erase = [], []
         for stroke, normals in zip(self._strokes, self._normals, strict=True):
-            for dab, normal in zip(stroke, normals, strict=True):
-                (erase if dab.erase else paint).extend(
-                    _circle(Vector(dab.center), normal, dab.radius)
-                )
+            if not stroke:
+                continue
+            lifted = [
+                Vector(dab.center) + normal * dab.radius * 0.04
+                for dab, normal in zip(stroke, normals, strict=True)
+            ]
+            if stroke[0].erase:
+                for dab, normal, point in zip(stroke, normals, lifted, strict=True):
+                    erase.extend(_circle(point, normal, dab.radius))
+                continue
+            paths.extend(_circle(lifted[0], normals[0], stroke[0].radius * 0.15))
+            for first, second in zip(lifted, lifted[1:]):
+                paths.extend((tuple(first), tuple(second)))
         grid_lines, grid_fill = [], []
         if self._grid is not None:
-            positions = self._grid.positions
+            lift = self._grid.cell * 0.06
+            positions = {
+                node: tuple(Vector(point) + Vector(self._grid.normals[node]) * lift)
+                for node, point in self._grid.positions.items()
+            }
             for face in self._grid.faces:
                 points = [positions[node] for node in face]
                 grid_fill.extend((points[0], points[1], points[2]))
@@ -384,9 +410,9 @@ class QT_OT_surface_paint(Operator):
             line_shader.bind()
             line_shader.uniform_float("viewportSize", (viewport[2], viewport[3]))
             for lines, color, width in (
-                (grid_lines, (0.2, 1.0, 0.55, 0.9), 1.5),
-                (paint, (0.1, 0.6, 1.0, 0.35), 1.0),
-                (erase, (1.0, 0.2, 0.2, 0.5), 1.0),
+                (grid_lines, (0.2, 1.0, 0.55, 0.95), 1.5),
+                (paths, (0.15, 0.6, 1.0, 0.8), 4.0),
+                (erase, (1.0, 0.25, 0.25, 0.8), 2.0),
             ):
                 if lines:
                     line_shader.uniform_float("color", color)
@@ -424,7 +450,7 @@ class QT_OT_surface_paint(Operator):
             lines.append(self._error)
         lines.extend(
             (
-                "Learn: the first stroke's direction becomes the edge-loop direction.",
+                "Learn: each stroke's direction becomes its edge-loop direction.",
                 "Regular grids have 4 edges at every inner vertex: no poles added.",
                 "LMB paint | Ctrl+LMB erase | [ ] brush | - = cell | R/Shift+R rotate",
                 "Backspace undo stroke | Enter build | Esc cancel | wheel/MMB navigate",

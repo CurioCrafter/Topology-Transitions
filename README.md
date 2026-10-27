@@ -54,7 +54,7 @@ that follows the surface:
 1. Choose the high-poly mesh as **Surface Target** and enter Edit Mode on your
    low-poly mesh (an empty mesh works).
 2. Click **Start Surface Paint**, paint with LMB, erase with Ctrl+LMB.
-3. Press Enter to build. Your first stroke's direction becomes the edge-loop
+3. Press Enter to build. Each stroke's direction becomes its edge-loop
    direction; R rotates it in 15-degree steps.
 
 The overlay explains the result while you paint: quad and vertex counts, why a
@@ -62,7 +62,30 @@ regular grid adds no poles, and where curvature stopped the grid. Border
 vertices can weld onto open edges of the existing mesh. The algorithm is
 described in [docs/SURFACE_PAINT_AND_BAKING.md](docs/SURFACE_PAINT_AND_BAKING.md).
 
+Painting live: blue lines are your strokes, the red ring is an erase dab, and
+the green grid is exactly what Enter will build. The overlay at the bottom
+left explains the result as you paint.
+
+![Surface Paint in progress on a high-poly head, with the teaching overlay](docs/images/09-surface-paint-live.png)
+
+After pressing Enter, the quads are added to the retopo mesh and selected:
+
+![Built Surface Paint quads on the forehead and cheek](docs/images/10-surface-paint-result.png)
+
+R rotates the edge flow. The same strokes at +45 degrees give diagonal loops:
+
+![The same strokes with the edge flow rotated 45 degrees](docs/images/11-surface-paint-flow-rotation.png)
+
+The **Surface Paint Quads** section of the sidebar:
+
+![Surface Paint Quads sidebar section](docs/images/12-surface-paint-panel.png)
+
+On a sphere, one stroke fills a smooth cap:
+
 ![Painted coverage filled with a surface-following quad grid](docs/images/06-surface-paint.png)
+
+Sharp creases such as a brow ridge stop the grid, leaving jagged gaps. Paint
+each side of a crease as its own stroke.
 
 ## Surface conformity and bake preview
 

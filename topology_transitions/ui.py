@@ -558,11 +558,11 @@ class QT_PT_sidebar(Panel):
         )
         if settings.show_surface_paint:
             paint = paint_shell.column(align=True)
-            paint.label(text="Paint where topology should go;", icon="BRUSH_DATA")
-            paint.label(text="your first stroke sets the edge-loop direction.")
-            paint.prop(settings, "surface_target")
+            paint.label(text="Paint where quads should go;", icon="BRUSH_DATA")
+            paint.label(text="stroke direction = edge loops.")
+            paint.prop(settings, "surface_target", text="Target")
             row = paint.row(align=True)
-            row.prop(settings, "paint_cell_size")
+            row.prop(settings, "paint_cell_size", text="Cell")
             row.prop(settings, "paint_brush_pixels", text="Brush")
             row = paint.row(align=True)
             row.prop(settings, "paint_flow_angle", text="Flow")
@@ -581,7 +581,7 @@ class QT_PT_sidebar(Panel):
             operator.flow_angle = settings.paint_flow_angle
             operator.relax_iterations = settings.paint_relax
             operator.weld = settings.paint_weld
-            paint.label(text="Ctrl erases; Enter builds; Esc cancels", icon="INFO")
+            paint.label(text="Ctrl erase | Enter build | Esc", icon="INFO")
 
         note = layout.column(align=True)
         note.label(text="One-quad core placement leaves a remesh gap.")

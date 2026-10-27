@@ -4,13 +4,15 @@
 
 - Added **Surface Paint Quads**: paint coverage on a high-poly target and fill
   it with a surface-following all-quad grid. The lattice grows breadth-first
-  from the first dab with parallel-transported tangent frames, stops at folds,
+  from the start of every stroke with parallel-transported tangent frames, stops at folds,
   curvature distortion, and wrap-around overlaps, then relaxes interior
   vertices on the surface. Border vertices can weld onto open edges of the
   existing mesh, with an automatic unwelded fallback if welding would break it.
-- The paint overlay teaches as it works: the first stroke sets the edge-loop
+- The paint overlay teaches as it works: each stroke sets its edge-loop
   direction, live counts show quads, vertices, and interior poles, and stopped
   cells are explained.
+- Every paint stroke starts its own grid patch, so separate painted areas all
+  fill. Preview lines are lifted off the surface so they draw solid.
 - Removed the experimental boundary-chain strip drawing (Connected Multi-Strip
   and Transition Ribbon). Loop-count transitions remain available through
   Apply Transition.

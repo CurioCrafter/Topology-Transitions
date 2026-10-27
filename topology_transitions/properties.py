@@ -282,7 +282,7 @@ class QT_PG_settings(PropertyGroup):
     )
     paint_flow_angle: FloatProperty(
         name="Flow Rotation",
-        description="Rotate the edge loops away from the first stroke's direction",
+        description="Rotate the edge loops away from each stroke's direction",
         default=0.0,
         subtype="ANGLE",
     )
