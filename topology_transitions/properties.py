@@ -261,53 +261,46 @@ class QT_PG_settings(PropertyGroup):
         default=0.35,
         subtype="FACTOR",
     )
-    show_drawing_tools: BoolProperty(
-        name="Show Connected Drawing",
-        description=(
-            "Show the optional experimental boundary-drawing controls. "
-            "The main workflow is transition placement, repair, and quad-flow reading"
-        ),
-        default=False,
+    show_surface_paint: BoolProperty(
+        name="Show Surface Paint",
+        description="Show the Surface Paint quad-grid tool",
+        default=True,
     )
-    draw_layout: EnumProperty(
-        name="Ribbon Layout",
-        description="Grow a uniform connected sheet or draw a density transition",
-        items=(
-            (
-                "UNIFORM",
-                "Connected Multi-Strip",
-                "Every selected boundary edge becomes one welded quad lane",
-            ),
-            (
-                "TRANSITION",
-                "Transition Ribbon",
-                "Draw the chosen loop-count transition along the stroke",
-            ),
-        ),
-        default="UNIFORM",
+    paint_cell_size: FloatProperty(
+        name="Cell Size",
+        description="Quad edge length; zero picks it from the first brush dab",
+        min=0.0,
+        default=0.0,
+        subtype="DISTANCE",
     )
-    draw_segments: IntProperty(
-        name="Length Segments",
-        description="Number of shared cross-rows along the drawn surface path",
-        min=1,
-        max=64,
-        default=6,
+    paint_brush_pixels: IntProperty(
+        name="Brush Size",
+        description="Brush radius in screen pixels",
+        min=4,
+        max=500,
+        default=40,
     )
-    draw_width_scale: FloatProperty(
-        name="Width Scale",
-        description="Scale the ribbon from the width of the selected bottom boundary",
-        min=0.25,
-        max=4.0,
-        default=1.0,
+    paint_flow_angle: FloatProperty(
+        name="Flow Rotation",
+        description="Rotate the edge loops away from the first stroke's direction",
+        default=0.0,
+        subtype="ANGLE",
     )
-    draw_flip_width: BoolProperty(
-        name="Flip Width",
-        description="Reverse which end of the selected chain is treated as left",
-        default=False,
+    paint_relax: IntProperty(
+        name="Relax",
+        description="On-surface smoothing passes that even out curved cells",
+        min=0,
+        max=20,
+        default=3,
+    )
+    paint_weld: BoolProperty(
+        name="Weld to Open Edges",
+        description="Merge painted border vertices onto nearby open edges of this mesh",
+        default=True,
     )
     surface_target: PointerProperty(
         name="Surface Target",
-        description="Separate high-poly mesh used for drawing and surface conformity",
+        description="Separate high-poly mesh used for painting and surface conformity",
         type=Object,
         poll=_mesh_object_poll,
     )

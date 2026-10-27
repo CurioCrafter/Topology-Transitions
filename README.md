@@ -8,8 +8,8 @@ connected issue in the 3D View.
 
 The add-on also builds guided all-quad loop reductions and expansions, repairs
 supported topology defects, reads broad quad-flow regions, prepares
-shrinkwrapped retopology for selected-to-active baking, and optionally draws
-welded boundary-grown quad sheets.
+shrinkwrapped retopology for selected-to-active baking, and paints
+surface-following quad grids onto a high-poly target.
 
 Supported transition directions are 5 -> 3, 3 -> 5, 3 -> 1, 1 -> 3,
 4 -> 2, 2 -> 4, 1 -> 2, and 2 -> 1. Pole placement, mirroring, surface
@@ -46,33 +46,23 @@ described under [Automatic Non-Manifold Repair](#automatic-non-manifold-repair).
 3. Open the top-right menu, choose **Install from Disk**, and select the ZIP.
 4. Open **3D View -> Sidebar -> Quad Transition**.
 
-## Experimental connected drawing
+## Surface Paint Quads
 
-This optional helper is hidden by default behind **Show Connected Drawing** in
-the sidebar. It is a boundary-driven way to grow several welded quad lanes when
-you specifically need a selected bottom edge chain to continue as one connected
-sheet:
+Paint where you want topology on a high-poly mesh and get a clean quad grid
+that follows the surface:
 
-1. Keep the high-poly source as a separate visible mesh and choose it as
-   **Surface Target**.
-2. On the low-poly mesh in Edit Mode, select one open boundary edge chain. Each
-   selected edge is one lane.
-3. Choose **Connected Multi-Strip** for a uniform sheet or **Transition Ribbon**
-   for one of the eight real density patterns.
-4. Click **Draw Connected Sheet**, drag LMB over the target, adjust rows
-   with the wheel and width with Shift+wheel, then press Enter.
+1. Choose the high-poly mesh as **Surface Target** and enter Edit Mode on your
+   low-poly mesh (an empty mesh works).
+2. Click **Start Surface Paint**, paint with LMB, erase with Ctrl+LMB.
+3. Press Enter to build. Your first stroke's direction becomes the edge-loop
+   direction; R rotates it in 15-degree steps.
 
-The selected chain is reused as the exact first row, so the new faces weld to
-the bottom quads instead of overlapping them. All lanes share their cross-row
-vertices and commit as one connected all-quad mesh. The far boundary is selected
-afterward for immediate continuation. Cyan filled preview cells show the entire
-sheet; magenta cells mark transition poles.
+The overlay explains the result while you paint: quad and vertex counts, why a
+regular grid adds no poles, and where curvature stopped the grid. Border
+vertices can weld onto open edges of the existing mesh. The algorithm is
+described in [docs/SURFACE_PAINT_AND_BAKING.md](docs/SURFACE_PAINT_AND_BAKING.md).
 
-The draw is transactional and target-specific. It cancels on a projection miss,
-folded/zero-area quad, invalid pole, non-manifold edge, hidden/interior/branched
-anchor chain, shape keys, or multi-object Edit Mode.
-
-![Five welded lanes continuing into a real five-to-three transition](docs/images/06-connected-multi-strip.png)
+![Painted coverage filled with a surface-following quad grid](docs/images/06-surface-paint.png)
 
 ## Surface conformity and bake preview
 
@@ -94,7 +84,7 @@ For selected-to-active baking:
 ![Orange exact-topology cage with green source hits and red misses](docs/images/07-bake-ray-preview.png)
 
 The full workflow and implementation boundaries are documented in
-[Experimental Connected Drawing, Surface Conformity, and Baking](docs/CONNECTED_MULTI_STRIP_AND_BAKING.md).
+[Surface Paint, Surface Conformity, and Baking](docs/SURFACE_PAINT_AND_BAKING.md).
 
 ## Apply a transition
 
@@ -400,10 +390,9 @@ orthographic, and camera-aligned views instead of using a fixed world axis.
 
 | Control | Effect |
 | --- | --- |
-| Ribbon Layout | Draws a uniform connected sheet or a real loop-count transition. |
-| Surface Target | Explicit high-poly mesh used for stroke hits and vertex projection. |
-| Length Segments / Width Scale | Controls shared cross-rows and boundary-relative width. |
-| Flip Width | Reverses which anchor endpoint is treated as the left side. |
+| Surface Target | Explicit high-poly mesh used for painting and vertex projection. |
+| Cell Size / Brush | Quad edge length (zero = from first dab) and brush radius in pixels. |
+| Flow / Relax | Edge-loop rotation and on-surface smoothing passes for Surface Paint. |
 | Transition | Incoming and outgoing loop counts. |
 | Patch Axis | Uses the active boundary edge or the alternate patch axis. |
 | Reverse Flow | Swaps incoming and outgoing patch sides. |
@@ -454,7 +443,7 @@ orthographic, and camera-aligned views instead of using a fixed world axis.
   use an explicit projection target or disable conformity.
 - The bake-ray overlay is a sampled diagnostic, not a replacement for the final
   Cycles bake. Green coverage does not prove UV or material correctness.
-- New ribbon loops currently receive default UV/color/custom-data values and
+- New Surface Paint quads currently receive default UV/color/custom-data values and
   should be unwrapped before baking.
 - Compound reductions such as 9 -> 5 are not automatically chained.
 - Multi-object Edit Mode is rejected; edit one mesh data-block at a time.
@@ -482,8 +471,8 @@ Key modules:
 - `direction_delete_ops.py`: selected-object face removal by world-axis normal;
 - `quad_flows.py` / `flow_ops.py`: pole-bounded regions, face bands, and overlay;
 - `manifold.py` / `manifold_ops.py`: pure diagnostics and Blender selection;
-- `ribbon.py` / `ribbon_ops.py`: connected multi-lane plans, surface fitting,
-  modal preview, and transactional BMesh growth;
+- `paint_grid.py` / `surface_paint_ops.py`: painted coverage, parallel-transport
+  lattice growth, relaxation, modal overlay, and transactional welding;
 - `surface_ops.py`: live Shrinkwrap, exact-topology cages, and bake readiness;
 - `bake_preview_ops.py`: sampled green-hit/red-miss bake-ray visualization;
 - `examples.py`: true unequal-density atlas generation.

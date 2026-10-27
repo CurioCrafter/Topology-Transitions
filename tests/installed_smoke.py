@@ -99,22 +99,22 @@ def create_single_quad():
     return obj
 
 
-def create_connected_ribbon_fixture():
+def create_surface_paint_fixture():
     bpy.ops.object.mode_set(mode="OBJECT")
     bpy.ops.object.select_all(action="SELECT")
     bpy.ops.object.delete(use_global=False)
     lanes = 3
-    target_mesh = bpy.data.meshes.new("installed_ribbon_target_mesh")
+    target_mesh = bpy.data.meshes.new("installed_paint_target_mesh")
     target_mesh.from_pydata(
         ((-2, -1, 0.5), (5, -1, 0.5), (5, 7, 0.5), (-2, 7, 0.5)),
         (),
         ((0, 1, 2, 3),),
     )
     target_mesh.update()
-    target = bpy.data.objects.new("InstalledRibbonTarget", target_mesh)
+    target = bpy.data.objects.new("InstalledPaintTarget", target_mesh)
     bpy.context.collection.objects.link(target)
 
-    mesh = bpy.data.meshes.new("installed_ribbon_mesh")
+    mesh = bpy.data.meshes.new("installed_paint_mesh")
     vertices = [
         (float(x), float(y), 0.5)
         for y in range(2)
@@ -126,7 +126,7 @@ def create_connected_ribbon_fixture():
     ]
     mesh.from_pydata(vertices, (), faces)
     mesh.update()
-    low = bpy.data.objects.new("InstalledRibbonLow", mesh)
+    low = bpy.data.objects.new("InstalledPaintLow", mesh)
     bpy.context.collection.objects.link(low)
     bpy.context.view_layer.objects.active = low
     low.select_set(True)
@@ -254,8 +254,9 @@ def main() -> None:
     from topology_transitions.directional_merge_ops import (
         merge_selected_by_direction,
     )
-    from topology_transitions.ribbon_ops import grow_ribbon_from_stroke
+    from topology_transitions.paint_grid import Dab
     from topology_transitions.surface_ops import find_bake_cage
+    from topology_transitions.surface_paint_ops import build_surface_paint
 
     expected_root = Path(os.environ["QT_EXPECTED_ADDON_ROOT"]).resolve()
     loaded = Path(topology_transitions.__file__).resolve()
@@ -551,31 +552,23 @@ def main() -> None:
     bpy.ops.object.mode_set(mode="OBJECT")
     view_merge.hide_set(True)
 
-    low, target = create_connected_ribbon_fixture()
-    ribbon_stats = grow_ribbon_from_stroke(
+    low, target = create_surface_paint_fixture()
+    stroke = [Dab((x * 0.5, 1.5, 0.5), 0.6) for x in range(1, 6)]
+    paint_stats = build_surface_paint(
         bpy.context,
-        [Vector((1.5, 3.0, 0.5)), Vector((1.5, 5.0, 0.5))],
-        [Vector((0.0, 0.0, 1.0)), Vector((0.0, 0.0, 1.0))],
-        layout="UNIFORM",
-        transition="THREE_TO_ONE",
-        segments=2,
-        width_scale=1.0,
-        pole_side="CENTER",
-        mirror=False,
-        pole_spacing=1.0,
+        [stroke],
+        [[Vector((0.0, 0.0, 1.0))] * len(stroke)],
         target=target,
-        project_limit=1.0,
+        cell=0.5,
     )
-    ribbon_bm = bmesh.from_edit_mesh(low.data)
-    selected_output = [edge for edge in ribbon_bm.edges if edge.select]
+    paint_bm = bmesh.from_edit_mesh(low.data)
     if (
-        ribbon_stats["new_faces"] != 6
-        or ribbon_stats["anchor_edges"] != 3
-        or ribbon_stats["output_edges"] != 3
-        or len(selected_output) != 3
-        or len(ribbon_bm.faces) != 9
+        paint_stats["quads"] < 4
+        or paint_stats["welded"] < 2
+        or len(paint_bm.faces) != 3 + paint_stats["quads"]
+        or any(len(face.verts) != 4 for face in paint_bm.faces)
     ):
-        raise AssertionError(f"Installed connected ribbon failed: {ribbon_stats}")
+        raise AssertionError(f"Installed surface paint failed: {paint_stats}")
     bpy.ops.object.mode_set(mode="OBJECT")
     shrinkwrap_result = bpy.ops.object.quad_transition_setup_shrinkwrap(
         target_name=target.name,
@@ -602,7 +595,7 @@ def main() -> None:
         f"directional_delete=1 auto_manifold=1 quad_optimize=auto_balanced "
         f"target_connector=1 detached_xray=1 "
         "directional_merge_pair_override=1 protected_uv=1 view_merge=1 "
-        "ribbon_quads=6 shrinkwrap=1 "
+        "surface_paint=1 shrinkwrap=1 "
         "bake_cage=1"
     )
 

@@ -5,10 +5,10 @@ from __future__ import annotations
 bl_info = {
     "name": "Topology Transitions",
     "author": "CurioCrafter",
-    "version": (0, 9, 3),
+    "version": (0, 10, 0),
     "blender": (4, 2, 0),
     "location": "View3D > Sidebar > Quad Transition",
-    "description": "Find manifold issues; repair and optimize guided quad topology",
+    "description": "Find manifold issues, paint and repair guided quad topology",
     "category": "Mesh",
     "doc_url": "https://github.com/CurioCrafter/Topology-Transitions",
     "tracker_url": "https://github.com/CurioCrafter/Topology-Transitions/issues",
@@ -28,8 +28,8 @@ def register() -> None:
         optimize_ops,
         properties,
         repair_ops,
-        ribbon_ops,
         surface_ops,
+        surface_paint_ops,
         target_connect_ops,
         ui,
     )
@@ -42,8 +42,8 @@ def register() -> None:
     loose_xray_ops.register()
     examples.register()
     flow_ops.register()
-    ribbon_ops.register()
     surface_ops.register()
+    surface_paint_ops.register()
     bake_preview_ops.register()
     direction_delete_ops.register()
     directional_merge_ops.register()
@@ -64,8 +64,8 @@ def unregister() -> None:
         optimize_ops,
         properties,
         repair_ops,
-        ribbon_ops,
         surface_ops,
+        surface_paint_ops,
         target_connect_ops,
         ui,
     )
@@ -76,8 +76,8 @@ def unregister() -> None:
     target_connect_ops.unregister()
     direction_delete_ops.unregister()
     bake_preview_ops.unregister()
+    surface_paint_ops.unregister()
     surface_ops.unregister()
-    ribbon_ops.unregister()
     flow_ops.unregister()
     examples.unregister()
     manifold_ops.unregister()

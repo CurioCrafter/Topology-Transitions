@@ -29,13 +29,10 @@ from topology_transitions.directional_merge_ops import (  # noqa: E402
 )
 from topology_transitions.flow_ops import build_flow_session  # noqa: E402
 from topology_transitions.operators import _make_template_and_layout  # noqa: E402
-from topology_transitions.ribbon import build_transition_ribbon  # noqa: E402
-from topology_transitions.ribbon_ops import (  # noqa: E402
-    QT_OT_draw_multi_strip,
-    TargetSurface,
-    _anchor_snapshot,
+from topology_transitions.paint_grid import Dab  # noqa: E402
+from topology_transitions.surface_paint_ops import (  # noqa: E402
     _event_window_coordinate,
-    grow_ribbon_from_stroke,
+    build_surface_paint,
 )
 
 PRESETS = (
@@ -65,8 +62,8 @@ def clear_scene() -> None:
             bpy.data.meshes.remove(mesh)
 
 
-def create_ribbon_fixture(name: str, lanes: int):
-    """Create a one-row retopo base plus a separate planar draw target."""
+def create_paint_fixture(name: str, lanes: int):
+    """Create a one-row retopo base plus a separate planar paint target."""
 
     clear_scene()
     target_mesh = bpy.data.meshes.new(f"{name}_target_mesh")
@@ -1514,11 +1511,8 @@ def assert_quad_flow_optimization() -> None:
     )
 
 
-def assert_connected_ribbon_growth() -> None:
+def assert_surface_paint() -> None:
     lanes = 5
-    segments = 4
-    retopo, target = create_ribbon_fixture("uniform_ribbon", lanes)
-    original_vertex_count = len(retopo.data.vertices)
     coordinate = _event_window_coordinate(
         SimpleNamespace(mouse_x=350, mouse_y=250),
         SimpleNamespace(x=100, y=50, width=800, height=600),
@@ -1527,129 +1521,39 @@ def assert_connected_ribbon_growth() -> None:
         SimpleNamespace(mouse_x=99, mouse_y=250),
         SimpleNamespace(x=100, y=50, width=800, height=600),
     )
-    preview = SimpleNamespace(
-        _stroke_points=[
-            Vector((lanes * 0.5, 3.0, 0.5)),
-            Vector((lanes * 0.5 + 0.35, 6.0, 0.5)),
-        ],
-        _stroke_normals=[Vector((0.0, 0.0, 1.0))] * 2,
-        _anchor=_anchor_snapshot(bpy.context),
-        _surface=TargetSurface(bpy.context, target),
-        layout="UNIFORM",
-        transition="FIVE_TO_THREE",
-        segments=segments,
-        width_scale=1.0,
-        pole_side="CENTER",
-        mirror=False,
-        pole_spacing=1.0,
-        project_limit=1.0,
-    )
-    preview_lines, preview_fill, preview_poles = (
-        QT_OT_draw_multi_strip._preview_geometry(preview)
-    )
-    if (
-        coordinate != (250.0, 200.0)
-        or outside is not None
-        or not preview_lines
-        or not preview_fill
-        or preview_poles
-    ):
-        raise AssertionError("Modal viewport coordinates or quad preview failed")
-    stats = grow_ribbon_from_stroke(
-        bpy.context,
-        [
-            Vector((lanes * 0.5, 3.0, 0.5)),
-            Vector((lanes * 0.5 + 0.35, 6.0, 0.5)),
-        ],
-        [Vector((0.0, 0.0, 1.0)), Vector((0.0, 0.0, 1.0))],
-        layout="UNIFORM",
-        transition="FIVE_TO_THREE",
-        segments=segments,
-        width_scale=1.0,
-        pole_side="CENTER",
-        mirror=False,
-        pole_spacing=1.0,
-        target=target,
-        project_limit=1.0,
-    )
-    bm = bmesh.from_edit_mesh(retopo.data)
-    bm.verts.ensure_lookup_table()
-    bm.edges.ensure_lookup_table()
-    bm.faces.ensure_lookup_table()
-    selected_edges = [edge for edge in bm.edges if edge.select]
-    anchor_vertices = bm.verts[lanes + 1 : (lanes + 1) * 2]
-    anchor_edges = [
-        bm.edges.get((first, second))
-        for first, second in zip(anchor_vertices, anchor_vertices[1:])
-    ]
-    if (
-        stats["new_faces"] != lanes * segments
-        or stats["anchor_edges"] != lanes
-        or stats["input_count"] != lanes
-        or stats["output_count"] != lanes
-        or len(bm.faces) != lanes + lanes * segments
-        or stats["output_edges"] != lanes
-        or len(selected_edges) != lanes
-        or any(len(face.verts) != 4 for face in bm.faces)
-        or any(edge is None or len(edge.link_faces) != 2 for edge in anchor_edges)
-        or any(len(edge.link_faces) > 2 for edge in bm.edges)
-        or any(
-            abs(vertex.co.z - 0.5) > 1.0e-5
-            for vertex in bm.verts[original_vertex_count:]
+    if coordinate != (250.0, 200.0) or outside is not None:
+        raise AssertionError("Modal viewport coordinates failed")
+    results = {}
+    for weld in (True, False):
+        retopo, target = create_paint_fixture(f"paint_weld_{weld}", lanes)
+        original_faces = len(retopo.data.polygons)
+        stroke = [Dab((x * 0.5, 1.5, 0.5), 0.6) for x in range(1, 10)]
+        stats = build_surface_paint(
+            bpy.context,
+            [stroke],
+            [[Vector((0.0, 0.0, 1.0))] * len(stroke)],
+            target=target,
+            cell=0.5,
+            weld=weld,
         )
-    ):
-        raise AssertionError(f"Uniform ribbon failed welded-sheet checks: {stats}")
-
-    transition_plan = build_transition_ribbon("FIVE_TO_THREE", segments)
-    retopo, target = create_ribbon_fixture("transition_ribbon", lanes)
-    transition_stats = grow_ribbon_from_stroke(
-        bpy.context,
-        [Vector((lanes * 0.5, 3.0, 0.5)), Vector((lanes * 0.5, 6.0, 0.5))],
-        [Vector((0.0, 0.0, 1.0)), Vector((0.0, 0.0, 1.0))],
-        layout="TRANSITION",
-        transition="FIVE_TO_THREE",
-        segments=segments,
-        width_scale=1.0,
-        pole_side="CENTER",
-        mirror=False,
-        pole_spacing=1.0,
-        target=target,
-        project_limit=1.0,
-    )
-    bm = bmesh.from_edit_mesh(retopo.data)
-    bm.verts.ensure_lookup_table()
-    bm.edges.ensure_lookup_table()
-    bm.faces.ensure_lookup_table()
-    anchor_vertices = bm.verts[lanes + 1 : (lanes + 1) * 2]
-    anchor_edges = [
-        bm.edges.get((first, second))
-        for first, second in zip(anchor_vertices, anchor_vertices[1:])
-    ]
-    pole_count = sum(
-        1
-        for vertex in bm.verts
-        if len(vertex.link_edges) == 3
-        and not any(len(edge.link_faces) == 1 for edge in vertex.link_edges)
-    )
-    selected_output_edges = [edge for edge in bm.edges if edge.select]
-    if (
-        transition_stats["new_faces"] != len(transition_plan.faces)
-        or transition_stats["input_count"] != 5
-        or transition_stats["output_count"] != 3
-        or transition_stats["poles"] != 2
-        or transition_stats["output_edges"] != 3
-        or len(selected_output_edges) != 3
-        or any(len(face.verts) != 4 for face in bm.faces)
-        or any(edge is None or len(edge.link_faces) != 2 for edge in anchor_edges)
-        or pole_count < 2
-    ):
-        raise AssertionError(
-            f"Transition ribbon failed density-change checks: {transition_stats}"
-        )
+        bm = bmesh.from_edit_mesh(retopo.data)
+        selected = [face for face in bm.faces if face.select]
+        if (
+            stats["quads"] < 8
+            or len(selected) != stats["quads"]
+            or len(bm.faces) != original_faces + stats["quads"]
+            or any(len(face.verts) != 4 for face in bm.faces)
+            or any(len(edge.link_faces) > 2 for edge in bm.edges)
+            or any(abs(vertex.co.z - 0.5) > 1.0e-5 for vertex in bm.verts)
+            or stats["interior_poles"] != 0
+        ):
+            raise AssertionError(f"Surface paint grid failed checks: {stats}")
+        results[weld] = stats
+    if results[True]["welded"] < 3 or results[False]["welded"] != 0:
+        raise AssertionError(f"Surface paint weld failed: {results}")
     print(
-        "QT_CONNECTED_RIBBON_PASS lanes=5 welded=5 uniform_quads=20 "
-        f"transition_quads={transition_stats['new_faces']} output_lanes=3 "
-        "poles=2 modal_preview=1"
+        f"QT_SURFACE_PAINT_PASS quads={results[True]['quads']} "
+        f"welded={results[True]['welded']} unwelded=0"
     )
 
 
@@ -2395,7 +2299,7 @@ def main() -> None:
         assert_target_mesh_connector()
         assert_detached_face_xray()
         assert_directional_merge()
-        assert_connected_ribbon_growth()
+        assert_surface_paint()
         assert_subdivision_preview()
         assert_external_projection_target()
         assert_invalid_selection_is_unchanged()
@@ -2406,7 +2310,7 @@ def main() -> None:
             "repair=6 boundary_input=2 manifold=5 auto_manifold=6 optimize=9 "
             "directional_delete=7 "
             "target_connector=2 detached_xray=1 directional_merge=12 "
-            "connected_ribbon=2"
+            "surface_paint=2"
         )
     finally:
         clear_scene()

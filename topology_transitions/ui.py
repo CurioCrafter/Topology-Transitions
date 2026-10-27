@@ -547,46 +547,41 @@ class QT_PT_sidebar(Panel):
             )
             metrics.label(text=f"{settings.flow_neighbor_count} adjacent flows")
 
-        draw_shell = layout.box()
-        draw_shell.label(text="Experimental Connected Drawing")
-        draw_shell.prop(settings, "show_drawing_tools")
-        if not settings.show_drawing_tools:
-            draw_shell.label(text="Hidden by default; optional boundary helper")
-        else:
-            draw = draw_shell.column(align=True)
-            draw.label(text="Select one open bottom boundary chain", icon="EDGESEL")
-            draw.label(text="Optional helper; not the main transition workflow")
-            draw.prop(settings, "surface_target")
-            draw.prop(settings, "draw_layout", text="")
-            if settings.draw_layout == "TRANSITION":
-                draw.prop(settings, "transition")
-                row = draw.row(align=True)
-                row.prop(settings, "pole_side", text="Pole")
-                row.prop(settings, "mirror")
-                draw.prop(settings, "pole_spacing")
-            row = draw.row(align=True)
-            row.prop(settings, "draw_segments")
-            row.prop(settings, "draw_width_scale")
-            draw.prop(settings, "draw_flip_width")
-            draw.prop(settings, "draw_project_limit")
-            operator = draw.operator(
-                "mesh.quad_transition_draw_multi_strip",
-                text="Draw Connected Sheet",
-                icon="GREASEPENCIL",
+        paint_shell = layout.box()
+        header = paint_shell.row()
+        header.prop(
+            settings,
+            "show_surface_paint",
+            text="Surface Paint Quads",
+            icon="TRIA_DOWN" if settings.show_surface_paint else "TRIA_RIGHT",
+            emboss=False,
+        )
+        if settings.show_surface_paint:
+            paint = paint_shell.column(align=True)
+            paint.label(text="Paint where topology should go;", icon="BRUSH_DATA")
+            paint.label(text="your first stroke sets the edge-loop direction.")
+            paint.prop(settings, "surface_target")
+            row = paint.row(align=True)
+            row.prop(settings, "paint_cell_size")
+            row.prop(settings, "paint_brush_pixels", text="Brush")
+            row = paint.row(align=True)
+            row.prop(settings, "paint_flow_angle", text="Flow")
+            row.prop(settings, "paint_relax")
+            paint.prop(settings, "paint_weld")
+            operator = paint.operator(
+                "mesh.quad_transition_surface_paint",
+                text="Start Surface Paint",
+                icon="BRUSH_DATA",
             )
-            operator.layout = settings.draw_layout
-            operator.transition = settings.transition
-            operator.segments = settings.draw_segments
-            operator.width_scale = settings.draw_width_scale
-            operator.flip_width = settings.draw_flip_width
-            operator.pole_side = settings.pole_side
-            operator.mirror = settings.mirror
-            operator.pole_spacing = settings.pole_spacing
             operator.target_name = (
                 settings.surface_target.name if settings.surface_target else ""
             )
-            operator.project_limit = settings.draw_project_limit
-            draw.label(text="LMB draw; wheel rows; Shift+wheel width", icon="INFO")
+            operator.cell_size = settings.paint_cell_size
+            operator.brush_pixels = settings.paint_brush_pixels
+            operator.flow_angle = settings.paint_flow_angle
+            operator.relax_iterations = settings.paint_relax
+            operator.weld = settings.paint_weld
+            paint.label(text="Ctrl erases; Enter builds; Esc cancels", icon="INFO")
 
         note = layout.column(align=True)
         note.label(text="One-quad core placement leaves a remesh gap.")

@@ -12,6 +12,7 @@ Shots are saved to the Windows default Screenshots directory unless
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 import traceback
 from pathlib import Path
@@ -30,11 +31,12 @@ from topology_transitions.bake_preview_ops import (  # noqa: E402
     build_bake_ray_preview,
 )
 from topology_transitions.flow_ops import build_flow_session  # noqa: E402
-from topology_transitions.ribbon_ops import grow_ribbon_from_stroke  # noqa: E402
+from topology_transitions.paint_grid import Dab  # noqa: E402
 from topology_transitions.surface_ops import (  # noqa: E402
     inspect_bake_readiness,
     toggle_bake_cage,
 )
+from topology_transitions.surface_paint_ops import build_surface_paint  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -48,7 +50,7 @@ def parse_args() -> argparse.Namespace:
             "flow",
             "pole",
             "example",
-            "ribbon",
+            "paint",
             "bake",
             "single",
         ),
@@ -71,7 +73,7 @@ OUTPUT_NAMES = {
     "flow": "03-edge-flow-scroll.png",
     "pole": "04-flow-termination.png",
     "example": "05-example-plane-strip.png",
-    "ribbon": "06-connected-multi-strip.png",
+    "paint": "06-surface-paint.png",
     "bake": "07-bake-ray-preview.png",
     "single": "08-single-quad-transition.png",
 }
@@ -372,102 +374,43 @@ def create_material(name: str, color: tuple[float, float, float, float]):
     return material
 
 
-def setup_connected_ribbon() -> None:
+def setup_surface_paint() -> None:
     clear_scene()
-    create_text(
-        "ONE WELDED 5-LANE SHEET  ->  5 TO 3 TRANSITION",
-        (2.5, 11.8, 0.06),
-        0.26,
-    )
-    create_text(
-        "EXACT BOTTOM BOUNDARY  |  OUTPUT CHAIN READY TO CONTINUE",
-        (2.5, -1.15, 0.06),
-        0.18,
-    )
-    target_mesh = bpy.data.meshes.new("RibbonSurface_mesh")
-    target_mesh.from_pydata(
-        ((-3, -2, -0.03), (8, -2, -0.03), (8, 13, -0.03), (-3, 13, -0.03)),
-        (),
-        ((0, 1, 2, 3),),
-    )
-    target_mesh.update()
-    target = bpy.data.objects.new("Ribbon Surface Target", target_mesh)
-    bpy.context.collection.objects.link(target)
+    create_text("PAINTED COVERAGE  ->  SURFACE-FOLLOWING QUAD GRID", (0, 4.2, 0), 0.26)
+    bpy.ops.mesh.primitive_uv_sphere_add(radius=3.0, segments=96, ring_count=48)
+    target = bpy.context.active_object
+    target.name = "Paint Surface Target"
+    bpy.ops.object.shade_smooth()
     target.data.materials.append(
-        create_material("RibbonTarget", (0.035, 0.045, 0.065, 1.0))
+        create_material("PaintTarget", (0.035, 0.045, 0.065, 1.0))
     )
-
-    lanes = 5
-    vertices = [
-        (float(x), float(y), 0.0)
-        for y in range(2)
-        for x in range(lanes + 1)
-    ]
-    faces = [
-        (x, x + 1, lanes + x + 2, lanes + x + 1)
-        for x in range(lanes)
-    ]
-    mesh = bpy.data.meshes.new("ConnectedRibbon_mesh")
-    mesh.from_pydata(vertices, (), faces)
-    mesh.update()
-    low = bpy.data.objects.new("Connected Ribbon", mesh)
+    mesh = bpy.data.meshes.new("SurfacePaint_mesh")
+    low = bpy.data.objects.new("Surface Paint Retopo", mesh)
     bpy.context.collection.objects.link(low)
     low.data.materials.append(
-        create_material("ConnectedRibbon", (0.03, 0.42, 0.86, 1.0))
+        create_material("SurfacePaint", (0.03, 0.42, 0.86, 1.0))
     )
     low.show_in_front = True
     bpy.ops.object.select_all(action="DESELECT")
     low.select_set(True)
     bpy.context.view_layer.objects.active = low
     bpy.ops.object.mode_set(mode="EDIT")
-    bpy.context.tool_settings.mesh_select_mode = (False, True, False)
-    bm = bmesh.from_edit_mesh(mesh)
-    bm.select_mode = {"EDGE"}
-    for edge in bm.edges:
-        edge.select_set(
-            all(abs(vertex.co.y - 1.0) < 1.0e-6 for vertex in edge.verts)
+    stroke = []
+    for index in range(9):
+        angle = -0.7 + index * 0.175
+        stroke.append(
+            Dab((3.0 * math.sin(angle), 0.0, 3.0 * math.cos(angle)), 1.1)
         )
-    bm.select_flush_mode()
-    bmesh.update_edit_mesh(mesh, loop_triangles=True, destructive=False)
-
-    grow_ribbon_from_stroke(
+    build_surface_paint(
         bpy.context,
-        [
-            Vector((2.5, 2.7, -0.03)),
-            Vector((2.75, 4.7, -0.03)),
-            Vector((2.55, 6.8, -0.03)),
-        ],
-        [Vector((0, 0, 1))] * 3,
-        layout="UNIFORM",
-        transition="FIVE_TO_THREE",
-        segments=6,
-        width_scale=1.0,
-        pole_side="CENTER",
-        mirror=False,
-        pole_spacing=1.0,
+        [stroke],
+        [[Vector(dab.center).normalized() for dab in stroke]],
         target=target,
-        project_limit=1.0,
-    )
-    grow_ribbon_from_stroke(
-        bpy.context,
-        [Vector((2.55, 8.6, -0.03)), Vector((2.65, 10.5, -0.03))],
-        [Vector((0, 0, 1))] * 2,
-        layout="TRANSITION",
-        transition="FIVE_TO_THREE",
-        segments=3,
-        width_scale=0.9,
-        pole_side="CENTER",
-        mirror=False,
-        pole_spacing=1.0,
-        target=target,
-        project_limit=1.0,
+        cell=0.28,
     )
     settings = bpy.context.scene.topology_transitions
     settings.surface_target = target
-    settings.draw_layout = "TRANSITION"
-    settings.transition = "FIVE_TO_THREE"
-    settings.draw_segments = 3
-    settings.draw_width_scale = 0.9
+    settings.paint_cell_size = 0.28
 
 
 def setup_bake_preview() -> None:
@@ -597,9 +540,17 @@ def setup() -> float:
     elif ARGS.shot == "example":
         setup_example_flow()
         configure_view(top=True)
-    elif ARGS.shot == "ribbon":
-        setup_connected_ribbon()
-        configure_view(top=True)
+    elif ARGS.shot == "paint":
+        setup_surface_paint()
+        window, screen, area, region = configure_view(top=False)
+        with bpy.context.temp_override(
+            window=window, screen=screen, area=area, region=region
+        ):
+            bpy.ops.mesh.quad_transition_surface_paint(
+                "INVOKE_DEFAULT",
+                target_name="Paint Surface Target",
+                cell_size=0.28,
+            )
     elif ARGS.shot == "single":
         setup_single_quad_transition()
         configure_view(top=True)

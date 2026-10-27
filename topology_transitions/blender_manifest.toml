@@ -1,9 +1,9 @@
 schema_version = "1.0.0"
 
 id = "topology_transitions"
-version = "0.9.3"
+version = "0.10.0"
 name = "Topology Transitions"
-tagline = "Find holes, repair, and optimize connected quad topology"
+tagline = "Find holes, paint, repair, and optimize quad topology"
 maintainer = "CurioCrafter"
 type = "add-on"
 
