@@ -143,6 +143,15 @@ def lens_snapshot(obj: Any) -> dict[str, Any]:
     }
 
 
+def _point_shader():
+    """Round points on Blender 4.3+; plain points on 4.2, which lacks them."""
+
+    try:
+        return gpu.shader.from_builtin("POINT_FLAT_COLOR")
+    except ValueError:
+        return gpu.shader.from_builtin("FLAT_COLOR")
+
+
 class QT_OT_topology_lens(Operator):
     bl_idname = "mesh.quad_transition_topology_lens"
     bl_label = "Topology Lens"
@@ -275,7 +284,7 @@ class QT_OT_topology_lens(Operator):
         if snapshot is None:
             return
         fill = gpu.shader.from_builtin("UNIFORM_COLOR")
-        points = gpu.shader.from_builtin("POINT_FLAT_COLOR")
+        points = _point_shader()
         positions, colors = [], []
         for _index, kind, point, _normal, _valence in snapshot["verts"]:
             if kind in DRAWN:

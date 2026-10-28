@@ -647,7 +647,11 @@ def _close_boundary_component(
     style = min(styles, key=lambda item: (-styles[item], item[0], item[1]))
     cap = bm.faces.new(cycle)
     cap.material_index, cap.smooth = style
-    bm.normal_update()
+    # Only the cap and its rim vertices changed; a whole-mesh normal update
+    # here dominated hole filling on dense scans.
+    cap.normal_update()
+    for vertex in cap.verts:
+        vertex.normal_update()
 
     side_count = len(cycle)
     if prefer_minimal and side_count % 2 == 0:
@@ -794,15 +798,23 @@ def solve_all_nonmanifold(
 
         initial_components = _boundary_components_from_bmesh(working)
         stats["boundary_areas"] = len(initial_components)
-        anchors = [component.vertex_ids[0] for component in initial_components]
-        for anchor in anchors:
-            current_components = _boundary_components_from_bmesh(working)
+        # Open and branched areas cannot be capped, so they are reported
+        # straight from the first scan. The boundary scan is redone only after
+        # a successful fill changed the mesh, which keeps dense scans with
+        # hundreds of open areas fast.
+        latest = initial_components
+        stale = False
+        for initial in initial_components:
+            if not initial.closed:
+                stats["failed_boundaries"] += 1
+                stats["failures"].append("branched or open boundary component")
+                continue
+            anchor = initial.vertex_ids[0]
+            if stale:
+                latest = _boundary_components_from_bmesh(working)
+                stale = False
             current = next(
-                (
-                    component
-                    for component in current_components
-                    if anchor in component.vertex_ids
-                ),
+                (component for component in latest if anchor in component.vertex_ids),
                 None,
             )
             if current is None:
@@ -812,16 +824,16 @@ def solve_all_nonmanifold(
                 stats["failures"].append("branched or open boundary component")
                 continue
 
+            # A copy keeps element order, so the scan's indices hold for it.
             trial = working.copy()
+            trial.verts.ensure_lookup_table()
+            trial.edges.ensure_lookup_table()
+            trial.verts.index_update()
+            trial.edges.index_update()
             try:
-                trial_component = next(
-                    component
-                    for component in _boundary_components_from_bmesh(trial)
-                    if anchor in component.vertex_ids
-                )
                 result = _close_boundary_component(
                     trial,
-                    trial_component,
+                    current,
                     prefer_minimal=prefer_minimal,
                     maximum_faces=maximum_faces,
                 )
@@ -833,6 +845,7 @@ def solve_all_nonmanifold(
 
             working.free()
             working = trial
+            stale = True
             stats["closed_boundaries"] += 1
             stats["triangle_boundaries"] += len(current.vertex_ids) == 3
             stats["minimal_fans"] += result["strategy"] == "minimal_fan"

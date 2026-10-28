@@ -1,9 +1,27 @@
-# Topology Transitions
+# Topology Transitions: retopology and quad topology tools for Blender
 
-**A Blender add-on that teaches topology while you build it.** Paint quads
-straight onto a high-poly surface, see every pole light up as you edit, and
-place real loop-count transitions (5 -> 3, 3 -> 1, ...) exactly where the
-density needs to change.
+[![Latest release](https://img.shields.io/github/v/release/CurioCrafter/Topology-Transitions?label=download)](https://github.com/CurioCrafter/Topology-Transitions/releases/latest)
+[![Blender 4.2 to 5.2](https://img.shields.io/badge/Blender-4.2%20to%205.2-orange?logo=blender&logoColor=white)](#tested-blender-versions)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/CurioCrafter/Topology-Transitions?style=flat)](https://github.com/CurioCrafter/Topology-Transitions/stargazers)
+[![Discussions](https://img.shields.io/github/discussions/CurioCrafter/Topology-Transitions)](https://github.com/CurioCrafter/Topology-Transitions/discussions)
+
+**A free Blender add-on that teaches topology while you build it.** Paint
+quads straight onto a high-poly sculpt for retopology, see every pole light up
+as you edit, and place real edge-loop transitions (5 -> 3, 3 -> 1, ...)
+exactly where the mesh density needs to change. It also finds holes and
+non-manifold geometry, turns triangles and n-gons into quads, and cleans up
+dense remesher output.
+
+Built for game assets, VR and real-time models, and anyone learning clean
+quad topology and edge flow.
+
+> **Got a question, a mesh it struggled with, or a retopo you are proud of?**
+> Come say hi in [Discussions](https://github.com/CurioCrafter/Topology-Transitions/discussions): ask in
+> [Q&A](https://github.com/CurioCrafter/Topology-Transitions/discussions/categories/q-a), suggest features in
+> [Ideas](https://github.com/CurioCrafter/Topology-Transitions/discussions/categories/ideas), or post your results in
+> [Show and tell](https://github.com/CurioCrafter/Topology-Transitions/discussions/categories/show-and-tell).
+> If it saves you time, a star helps other Blender users find it.
 
 ![The Topology Lens explaining a 5-pole on a low-poly head](docs/images/13-topology-lens.png)
 
@@ -20,6 +38,26 @@ density needs to change.
 
 Each colour matches a collapsible section of the sidebar, so the panel stays
 short: open only the step you are on.
+
+## What's new in 0.10
+
+0.10 is the biggest update so far, focused on making retopology faster and
+easier to learn:
+
+- **Surface Paint Quads** replaces the old boundary strip drawing. Paint where
+  quads should go; the grid walks over creases like a brow ridge instead of
+  stopping there, borders come out smooth, separate strokes are joined with
+  real 5 -> 3 style transitions, and **Mirror X** paints both halves at once.
+- **Topology Lens**: a live, colour-coded overlay for 3-, 5- and 6+ poles,
+  triangles and n-gons, with a hover card that explains each vertex. It stays
+  on while you model.
+- **A new sidebar**: a Start Here card with the three main tools and a setup
+  checklist, followed by colour-coded sections that stay closed until needed,
+  instead of one long panel.
+- **Coach cards in the viewport**: every modal tool shows live counts and its
+  keys as key caps, so there is nothing to memorise.
+
+Full details are in the [changelog](CHANGELOG.md).
 
 ## Start Here: Find Holes and Check Manifold Issues
 
@@ -54,7 +92,34 @@ described under [Automatic Non-Manifold Repair](#automatic-non-manifold-repair).
    [GitHub Releases](https://github.com/CurioCrafter/Topology-Transitions/releases/latest).
 2. In Blender 4.2 or newer, open **Edit -> Preferences -> Get Extensions**.
 3. Open the top-right menu, choose **Install from Disk**, and select the ZIP.
+   (You can also drag the ZIP into the Blender window.)
 4. Open **3D View -> Sidebar -> Quad Transition**.
+
+One ZIP works on every Blender version from 4.2 to 5.2.
+
+### Tested Blender versions
+
+| Blender | Automated tests | Viewport overlays checked |
+| --- | --- | --- |
+| 4.2.19 LTS | Pass | Yes |
+| 4.5 LTS | Pass | Yes |
+| 5.0.1 | Pass | - |
+| 5.1.2 | Pass | Yes |
+| 5.2.3 LTS | Pass | Yes |
+
+Blender 4.1 and older cannot install Blender extensions and are not
+supported. Blender 3.6 LTS reached end of life in 2025.
+
+### Tested on real meshes
+
+Before release, every main tool was run on a mix of real production meshes:
+AI-generated scans (Rodin, Tripo; 6,000 to 24,000 triangles with hundreds of
+open holes), game character armour (mostly quads with open borders), and a
+low-poly game model. No tool left a non-manifold edge behind, Surface Paint
+produced 120 to 256 clean quads on each in under 0.35 s, and tools that do not
+apply to a mesh (for example the quad optimizer on a triangle mesh) refuse
+with a clear message instead of changing anything. You can run the same sweep
+on your own files with `tests/real_mesh_stress.py`.
 
 ## The sidebar
 
@@ -529,6 +594,14 @@ blender.exe --background --factory-startup --python tests\blender_smoke.py
 python scripts\build_release.py
 ```
 
+`tests/real_mesh_stress.py` runs every main tool on one of your own mesh files
+(GLB, glTF, FBX, OBJ or DAE) and prints a JSON line with status, timing and a
+manifold check per tool:
+
+```powershell
+blender.exe -b --factory-startup --python tests\real_mesh_stress.py -- path\to\mesh.glb
+```
+
 README screenshots are reproducible with `scripts/capture_showcase.py` (see
 its docstring) and `scripts/capture_docs.py`.
 
@@ -557,6 +630,21 @@ Key modules:
 
 The topology derivation is in [docs/TOPOLOGY.md](docs/TOPOLOGY.md), and detailed
 flow controls are in [docs/EDGE_FLOW_SCROLL.md](docs/EDGE_FLOW_SCROLL.md).
+
+## Community and contributing
+
+- **Questions and help:** [Q&A discussions](https://github.com/CurioCrafter/Topology-Transitions/discussions/categories/q-a).
+- **Feature ideas:** [Ideas](https://github.com/CurioCrafter/Topology-Transitions/discussions/categories/ideas). Tell us
+  which topology problem you keep fixing by hand.
+- **Show your work:** [Show and tell](https://github.com/CurioCrafter/Topology-Transitions/discussions/categories/show-and-tell).
+  Before/after retopology shots help everyone learn.
+- **Bugs:** [open an issue](https://github.com/CurioCrafter/Topology-Transitions/issues) with your Blender version, what you
+  selected, and the message the add-on showed. A small .blend helps a lot.
+- **Code:** pull requests are welcome. Run the checks in
+  [Development and verification](#development-and-verification) first.
+
+If Topology Transitions helps you, please star the repository so more Blender
+artists can find it.
 
 ## License
 

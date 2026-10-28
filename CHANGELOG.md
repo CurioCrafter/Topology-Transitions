@@ -30,6 +30,14 @@
 - Removed the experimental boundary-chain strip drawing (Connected Multi-Strip
   and Transition Ribbon). Loop-count transitions remain available through
   Apply Transition.
+- **Auto Solve All Non-Manifold Areas** is much faster on dense scans with
+  many holes (560 s -> 100 s on a 24,000-triangle AI scan, 47 s -> 6 s on a
+  6,000-triangle statue) with identical results: open and branched areas are
+  skipped from the first scan, and only the new cap updates its normals.
+- Tested on Blender 4.2.19 LTS, 4.5 LTS, 5.0.1, 5.1.2 and 5.2.3 LTS; the Topology
+  Lens falls back to Blender 4.2's point shader.
+- Added `tests/real_mesh_stress.py`, a sweep that runs every main tool on a
+  real mesh file and checks the result stays manifold.
 - Added pure tests for creases, cleanup, joins, mirroring and erase dabs, plus
   Blender checks for welding, mirroring and Lens pole counts, and a
   reproducible README screenshot script.
