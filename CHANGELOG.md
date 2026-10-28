@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.2 - 2026-10-27
+
+- Relicensed from MIT to **GPL-3.0-or-later**, the licence Blender uses and the
+  one extensions.blender.org requires for add-ons. No code changes. Releases up
+  to 0.10.1 stay available under MIT.
+
 ## 0.10.1 - 2026-10-27
 
 - The Topology Lens hover card now flips to the left of the cursor before it

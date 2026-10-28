@@ -2,7 +2,7 @@
 
 [![Latest release](https://img.shields.io/github/v/release/CurioCrafter/Topology-Transitions?label=download)](https://github.com/CurioCrafter/Topology-Transitions/releases/latest)
 [![Blender 4.2 to 5.2](https://img.shields.io/badge/Blender-4.2%20to%205.2-orange?logo=blender&logoColor=white)](#tested-blender-versions)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/CurioCrafter/Topology-Transitions?style=flat)](https://github.com/CurioCrafter/Topology-Transitions/stargazers)
 [![Discussions](https://img.shields.io/github/discussions/CurioCrafter/Topology-Transitions)](https://github.com/CurioCrafter/Topology-Transitions/discussions)
 
@@ -674,4 +674,12 @@ artists can find it.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+Copyright (c) 2026 CurioCrafter.
+
+Topology Transitions is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License, version 3 or (at your
+option) any later version. See [LICENSE](LICENSE). This is the same licence as
+Blender itself and the one extensions.blender.org asks add-ons to use.
+
+Releases up to 0.10.1 were published under the MIT licence, and copies of those
+releases keep it.
