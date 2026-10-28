@@ -392,11 +392,8 @@ class QT_OT_topology_lens(Operator):
         ]
         width, height = hud.measure_card(title, rows)
         x, y = self._mouse
-        x = (
-            x + 22.0
-            if x + 22.0 + width < self._region.width - 8.0
-            else x - 22.0 - width
-        )
+        right = hud.visible_right(self._area, self._region)
+        x = x + 22.0 if x + 22.0 + width < right else x - 22.0 - width
         y = min(y + 14.0, self._region.height - height - 8.0)
         hud.draw_card(max(8.0, x), max(8.0, y), title, color, rows)
 

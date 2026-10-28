@@ -263,8 +263,7 @@ def setup_single_quad_transition() -> None:
     active_edges = [
         edge
         for edge in bm.edges
-        if edge.select
-        and all(abs(vertex.co.y - 0.5) < 1.0e-6 for vertex in edge.verts)
+        if edge.select and all(abs(vertex.co.y - 0.5) < 1.0e-6 for vertex in edge.verts)
     ]
     bm.select_history.clear()
     bm.select_history.add(active_edges[0])
@@ -387,9 +386,7 @@ def setup_surface_paint() -> None:
     mesh = bpy.data.meshes.new("SurfacePaint_mesh")
     low = bpy.data.objects.new("Surface Paint Retopo", mesh)
     bpy.context.collection.objects.link(low)
-    low.data.materials.append(
-        create_material("SurfacePaint", (0.03, 0.42, 0.86, 1.0))
-    )
+    low.data.materials.append(create_material("SurfacePaint", (0.03, 0.42, 0.86, 1.0)))
     low.show_in_front = True
     bpy.ops.object.select_all(action="DESELECT")
     low.select_set(True)
@@ -398,9 +395,7 @@ def setup_surface_paint() -> None:
     stroke = []
     for index in range(9):
         angle = -0.7 + index * 0.175
-        stroke.append(
-            Dab((3.0 * math.sin(angle), 0.0, 3.0 * math.cos(angle)), 1.1)
-        )
+        stroke.append(Dab((3.0 * math.sin(angle), 0.0, 3.0 * math.cos(angle)), 1.1))
     build_surface_paint(
         bpy.context,
         [stroke],
@@ -424,9 +419,7 @@ def setup_bake_preview() -> None:
     bpy.ops.object.mode_set(mode="OBJECT")
     low.data.uv_layers.new(name="UVMap")
     low.color = (0.03, 0.35, 0.95, 1.0)
-    low.data.materials.append(
-        create_material("BakeLow", (0.03, 0.35, 0.95, 1.0))
-    )
+    low.data.materials.append(create_material("BakeLow", (0.03, 0.35, 0.95, 1.0)))
     bake_material = low.data.materials[0]
     bake_material.use_nodes = True
     image_node = bake_material.node_tree.nodes.new("ShaderNodeTexImage")
@@ -448,9 +441,7 @@ def setup_bake_preview() -> None:
     high = bpy.data.objects.new("Selected High Source", high_mesh)
     bpy.context.collection.objects.link(high)
     high.color = (0.12, 0.15, 0.2, 1.0)
-    high.data.materials.append(
-        create_material("BakeHigh", (0.12, 0.15, 0.2, 1.0))
-    )
+    high.data.materials.append(create_material("BakeHigh", (0.12, 0.15, 0.2, 1.0)))
     bpy.ops.object.select_all(action="DESELECT")
     low.select_set(True)
     high.select_set(True)

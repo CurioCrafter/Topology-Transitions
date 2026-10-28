@@ -47,6 +47,14 @@ def left_margin(area) -> float:
     return (tools.width if tools is not None else 0.0) + 16.0
 
 
+def visible_right(area, region) -> float:
+    """Right edge of the viewport not covered by an overlapping sidebar."""
+
+    sidebar = next((r for r in area.regions if r.type == "UI"), None)
+    covered = sidebar.width if sidebar is not None and sidebar.width > 1 else 0
+    return region.width - covered - 8.0
+
+
 def _shader():
     return gpu.shader.from_builtin("UNIFORM_COLOR")
 

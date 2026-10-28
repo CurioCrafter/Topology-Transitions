@@ -5,7 +5,9 @@ Open a saved .blend (this skips the splash screen) with a UI, for example:
     blender.exe --factory-startup -p 40 40 1600 1000 blank.blend \\
       --python scripts/capture_showcase.py -- paint docs/images
 
-Shots: paint, result, mirror, lens, sidebar. Each run saves one PNG and quits. For the
+Shots: paint, result, mirror, lens, sidebar. The GIF modes paint-gif,
+mirror-gif and lens-gif save numbered frames (<mode>_NN.png) instead; join them
+with scripts/make_gifs.py. Each run saves one PNG and quits. For the
 picture only, the add-on panels are shown in the sidebar's first tab.
 """
 
@@ -29,6 +31,8 @@ from topology_transitions.paint_grid import Dab  # noqa: E402
 
 ARGS = sys.argv[sys.argv.index("--") + 1 :]
 SHOT, OUT = ARGS[0], Path(ARGS[1])
+GIF = SHOT.endswith("-gif")
+SHOT = SHOT.removesuffix("-gif")
 NAMES = {
     "paint": "09-surface-paint-live.png",
     "result": "10-surface-paint-result.png",
@@ -200,7 +204,79 @@ def run():
             operator._mouse = (region.width * 0.6, region.height * 0.42)
             instances["mouse"] = operator._mouse
     area.tag_redraw()
-    bpy.app.timers.register(capture, first_interval=1.0)
+    bpy.app.timers.register(start_gif if GIF else capture, first_interval=1.0)
+
+
+FRAMES: list = []
+
+
+def screen_of(area, region, point):
+    from bpy_extras import view3d_utils
+
+    rv3d = area.spaces.active.region_3d
+    return view3d_utils.location_3d_to_region_2d(region, rv3d, Vector(point))
+
+
+def start_gif():
+    """Build the list of frame setters, then shoot them one by one."""
+
+    window, area, region = view()
+    if SHOT == "lens":
+        lens = instances["lens"]
+        lens._refresh()
+        eye = area.spaces.active.region_3d.view_matrix.inverted().translation
+        picks = {}
+        for entry in lens._snapshot["verts"]:
+            facing = (entry[2] - eye).normalized().dot(entry[3].normalized())
+            if facing > -0.55 or entry[1] in picks:
+                continue
+            screen = screen_of(area, region, entry[2])
+            if screen is not None and 0.2 < screen.x / region.width < 0.62:
+                picks[entry[1]] = (screen.x, screen.y)
+        for kind in ("e_pole", "n_pole", "regular", "high_pole", "doublet"):
+            if kind in picks:
+                FRAMES.append(lambda point=picks[kind]: instances.update(mouse=point))
+    else:
+        operator = instances["paint"]
+        strokes, normals = operator._strokes, operator._normals
+        steps = [(s, d) for s, stroke in enumerate(strokes) for d in range(len(stroke))]
+        for s, d in steps[1::2] + [steps[-1]]:
+
+            def setter(s=s, d=d):
+                operator._strokes = [*strokes[:s], strokes[s][: d + 1]]
+                operator._normals = [*normals[:s], normals[s][: d + 1]]
+                operator._replan()
+                point = screen_of(area, region, strokes[s][d].center)
+                if point is not None:
+                    instances["mouse"] = (point.x, point.y)
+
+            FRAMES.append(setter)
+    shoot_frame.index = 0
+    next_frame()
+
+
+def next_frame():
+    window, area, region = view()
+    if shoot_frame.index >= len(FRAMES):
+        print("SHOWCASE_OK", SHOT, "frames", len(FRAMES))
+        bpy.app.timers.register(quit_blender, first_interval=0.3)
+        return
+    FRAMES[shoot_frame.index]()
+    for key in ("lens", "paint"):
+        if key in instances and "mouse" in instances:
+            instances[key]._mouse = instances["mouse"]
+            instances[key]._hover_key = None
+    area.tag_redraw()
+    bpy.app.timers.register(shoot_frame, first_interval=0.35)
+
+
+def shoot_frame():
+    window, area, region = view()
+    path = OUT / f"{SHOT}-gif_{shoot_frame.index:02d}.png"
+    with bpy.context.temp_override(window=window, area=area, region=region):
+        bpy.ops.screen.screenshot(filepath=str(path))
+    shoot_frame.index += 1
+    bpy.app.timers.register(next_frame, first_interval=0.05)
 
 
 def aim_lens(area, region):

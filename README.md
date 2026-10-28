@@ -6,6 +6,16 @@
 [![Stars](https://img.shields.io/github/stars/CurioCrafter/Topology-Transitions?style=flat)](https://github.com/CurioCrafter/Topology-Transitions/stargazers)
 [![Discussions](https://img.shields.io/github/discussions/CurioCrafter/Topology-Transitions)](https://github.com/CurioCrafter/Topology-Transitions/discussions)
 
+<p align="center">
+  <img src="docs/images/paint.gif" width="760" alt="Painting a quad grid across a sculpted head in Blender with Surface Paint; the grid follows the brow ridge and a live coach card counts quads and poles">
+</p>
+
+<p align="center">
+  <a href="https://github.com/CurioCrafter/Topology-Transitions/releases/latest"><b>Download the latest release</b></a> ·
+  <a href="#install">Install in 30 seconds</a> ·
+  <a href="https://github.com/CurioCrafter/Topology-Transitions/discussions">Discussions</a>
+</p>
+
 **A free Blender add-on that teaches topology while you build it.** Paint
 quads straight onto a high-poly sculpt for retopology, see every pole light up
 as you edit, and place real edge-loop transitions (5 -> 3, 3 -> 1, ...)
@@ -23,7 +33,19 @@ quad topology and edge flow.
 > [Show and tell](https://github.com/CurioCrafter/Topology-Transitions/discussions/categories/show-and-tell).
 > If it saves you time, a star helps other Blender users find it.
 
-![The Topology Lens explaining a 5-pole on a low-poly head](docs/images/13-topology-lens.png)
+## See it in action
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/lens.gif" alt="Topology Lens hovering over a 5-pole, a 3-pole, a regular vertex, a 6+ pole and a doublet, each with an explanation card"></td>
+    <td width="50%"><img src="docs/images/mirror.gif" alt="One stroke with Mirror X becoming a symmetric quad band across the forehead"></td>
+  </tr>
+  <tr>
+    <td><b>Topology Lens:</b> hover any vertex to learn what it does to the edge flow.</td>
+    <td><b>Mirror X:</b> paint one side, get both, with a shared centre seam.</td>
+  </tr>
+</table>
+
 
 | | Tool | What it does for you |
 | --- | --- | --- |
@@ -145,6 +167,8 @@ Click **Topology Lens** in Start Here. It stays on while you model.
 - **Red** dots: 6+ poles and doublets, which pinch under subdivision.
 - **Violet** dots: poles on an open border.
 - **Amber / red tint**: triangles / n-gons.
+
+![The Topology Lens explaining a 5-pole on a low-poly head](docs/images/13-topology-lens.png)
 
 The card in the corner counts quads, tris, n-gons and each pole type. Hover
 any vertex for a card that names it, highlights its edges, and gives a tip on
@@ -603,7 +627,9 @@ blender.exe -b --factory-startup --python tests\real_mesh_stress.py -- path\to\m
 ```
 
 README screenshots are reproducible with `scripts/capture_showcase.py` (see
-its docstring) and `scripts/capture_docs.py`.
+its docstring) and `scripts/capture_docs.py`; its `paint-gif`, `mirror-gif` and
+`lens-gif` modes save frames that `scripts/make_gifs.py` turns into the README
+GIFs, and `scripts/make_social_preview.py` builds the social preview image.
 
 The Blender smoke is only accepted when it prints
 `QT_BLENDER_SMOKE_PASS`. `tests/installed_smoke.py` verifies the installed ZIP

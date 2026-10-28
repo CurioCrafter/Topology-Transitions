@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.1 - 2026-10-27
+
+- The Topology Lens hover card now flips to the left of the cursor before it
+  would slide under the sidebar, instead of only at the window edge.
+- README: animated GIFs of Surface Paint, the Topology Lens and Mirror X, plus
+  scripts to regenerate them and the social preview image.
+
 ## 0.10.0 - 2026-10-27
 
 - Added **Surface Paint Quads**: paint coverage on a high-poly target and fill

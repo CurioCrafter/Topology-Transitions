@@ -5,7 +5,7 @@ from __future__ import annotations
 bl_info = {
     "name": "Topology Transitions",
     "author": "CurioCrafter",
-    "version": (0, 10, 0),
+    "version": (0, 10, 1),
     "blender": (4, 2, 0),
     "location": "View3D > Sidebar > Quad Transition",
     "description": "Find manifold issues, paint and repair guided quad topology",
