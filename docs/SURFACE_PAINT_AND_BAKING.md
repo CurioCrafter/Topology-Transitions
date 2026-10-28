@@ -49,22 +49,28 @@ dependency, so it is unit-tested on analytic planes, spheres and a sharp ridge.
    far side of a thin part), when it would sit closer than 0.35 or further than
    2 cells from a grid neighbour, or when it lands on another part of the grid.
    The patch stops there instead of producing slivers or overlaps.
-5. **Cleanup.** Every grid square with four corners becomes a quad. One-cell
+5. **Fill the gaps.** A grid cannot walk across a gap in the surface, such as
+   an eyeball sitting in its socket or a separate shell. Spines, ribs and
+   spurs that will not survive cleanup are removed first, then the painted
+   area is sampled across every brush disc and through its depth, and each
+   sample that is still empty starts a new patch, oriented like the nearest
+   stroke. Pieces smaller than six quads are dropped at the end.
+6. **Cleanup.** Every grid square with four corners becomes a quad. One-cell
    spurs with three open sides are removed, and where two cells touch only at
    a corner the smaller fan is dropped, so no vertex is non-manifold.
-6. **Joins.** With **Join Patches** on, facing borders of different patches
+7. **Joins.** With **Join Patches** on, facing borders of different patches
    (within 4.5 cells) are connected. Equal edge counts get a plain strip of
    quads; different counts use the add-on's own transition templates: as many
    n+2 -> n sections as needed, plus one 2 -> 1 cell for an odd difference.
-7. **Relax.** Inner vertices move halfway toward their neighbours and border
+8. **Relax.** Inner vertices move halfway toward their neighbours and border
    vertices a third of the way toward their two border neighbours, both
    projected back onto the surface. Border smoothing rounds off the staircase a
    square grid leaves along a painted outline. A move that would fold a quad is
    skipped, and a join that still folds after relaxing is removed.
-8. **Mirror.** With **Mirror X** the grid also grows into the reflected paint,
+9. **Mirror.** With **Mirror X** the grid also grows into the reflected paint,
    is clipped at the retopo object's local YZ plane, the seam vertices are
    snapped onto the plane, and the reflected half shares them.
-9. **Weld.** With **Weld to Open Edges** on, border vertices merge onto open
+10. **Weld.** With **Weld to Open Edges** on, border vertices merge onto open
    boundary vertices of the existing mesh within about a third of a cell. If
    welding would break the mesh, the patch is built unwelded and a warning is
    shown.

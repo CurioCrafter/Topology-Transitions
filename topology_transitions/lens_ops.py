@@ -371,8 +371,12 @@ class QT_OT_topology_lens(Operator):
             [
                 ("chip", hud.AMBER, f"{counts['n_pole']} 3-poles"),
                 ("chip", hud.MAGENTA, f"{counts['e_pole']} 5-poles"),
-                ("chip", hud.CORAL, f"{counts['high_pole'] + counts['doublet']} bad"),
-                ("chip", hud.VIOLET, f"{counts['border_pole']} border"),
+                (
+                    "chip",
+                    hud.CORAL,
+                    f"{counts['high_pole'] + counts['doublet']} to fix",
+                ),
+                ("chip", hud.VIOLET, f"{counts['border_pole']} border poles"),
             ],
             [("Hover a dot to learn what it does to the edge flow.", hud.MUTED)],
             [

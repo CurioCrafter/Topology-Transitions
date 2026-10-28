@@ -162,9 +162,18 @@ def paint_scene(mirror: bool):
             ([(0.12 + i * 0.07, 0.72 - i * 0.015) for i in range(9)], 0.28, False),
         ]
     else:
+        # A forehead band that follows the brow's curve, then both cheeks.
         specs = [
-            ([(-0.85 + i * 0.1, 0.55) for i in range(18)], 0.3, False),
-            ([(0.6, 0.0 - i * 0.08) for i in range(5)], 0.24, False),
+            (
+                [
+                    (x, 0.74 + 0.05 * (1 - abs(x) / 0.72))
+                    for x in (-0.72 + i * 0.09 for i in range(17))
+                ],
+                0.26,
+                False,
+            ),
+            ([(0.52 - i * 0.015, 0.1 - i * 0.07) for i in range(6)], 0.22, False),
+            ([(-0.52 + i * 0.015, 0.1 - i * 0.07) for i in range(6)], 0.22, False),
         ]
     return target, strokes(target, specs)
 
@@ -183,7 +192,7 @@ def run():
             bpy.ops.mesh.quad_transition_topology_lens("INVOKE_DEFAULT")
     else:
         target, (paint, normals) = paint_scene(SHOT == "mirror")
-        frame(window, area, region, (radians(70), 0, radians(-26)), (0.1, 0, 0.3), 4.3)
+        frame(window, area, region, (radians(72), 0, radians(-14)), (0.05, 0, 0.3), 4.2)
         if SHOT == "sidebar":
             pass
         elif SHOT == "result":
@@ -240,7 +249,7 @@ def start_gif():
         operator = instances["paint"]
         strokes, normals = operator._strokes, operator._normals
         steps = [(s, d) for s, stroke in enumerate(strokes) for d in range(len(stroke))]
-        for s, d in steps[1::2] + [steps[-1]]:
+        for s, d in steps:
 
             def setter(s=s, d=d):
                 operator._strokes = [*strokes[:s], strokes[s][: d + 1]]

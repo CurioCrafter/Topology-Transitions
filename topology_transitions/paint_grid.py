@@ -391,6 +391,9 @@ def _grow(
     for patch, seed in enumerate(seeds):
         grow_from(patch, seed)
     drop_strings(set(range(len(seeds))))
+    # The coach card explains where the strokes' own lattices stopped; the
+    # fill pass below tries many starts, which would drown that number.
+    folds, overlaps = stats["folds"], stats["overlaps"]
     # A lattice cannot walk across a gap in the surface (an eyeball inside its
     # socket, a separate shell), so painted surface the stroke seeds never
     # reached gets its own patch, oriented like the nearest stroke; joining
@@ -407,7 +410,7 @@ def _grow(
             if grow_from(patch, Seed(point, normal, nearest.flow)):
                 drop_strings({patch})
                 patch += 1
-    return positions, normals, stats["folds"], stats["overlaps"]
+    return positions, normals, folds, overlaps
 
 
 def _lattice_faces(positions: dict[Node, Point3]) -> list[Face]:

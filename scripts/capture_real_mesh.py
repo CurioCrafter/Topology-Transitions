@@ -10,6 +10,7 @@ Shots:
 - holes-after: the faces Auto Solve All Non-Manifold Areas added, selected.
   Add -zoom to either to frame the biggest hole instead of the whole mesh.
 - lens: the Topology Lens with its card on a front-facing 5-pole.
+- lens-gif: one frame per pole kind hovered (<out stem>_NN.png).
 - paint: a Surface Paint stroke across the front of the mesh.
 
 Each run imports the file, joins its meshes, saves one PNG and quits. The
@@ -42,6 +43,8 @@ INFO: dict = {"mesh": MESH.name, "shot": SHOT}
 for panel in ui.CLASSES:
     panel.bl_category = "Item"
 topology_transitions.register()
+# Animated view moves (Auto Solve focuses its result) would undo the framing.
+bpy.context.preferences.view.smooth_view = 0
 instances = {}
 
 
@@ -105,7 +108,7 @@ def import_mesh():
     obj.name = MESH.stem
     obj.data.materials.clear()
     clay = bpy.data.materials.new("Clay")
-    clay.diffuse_color = (0.36, 0.34, 0.32, 1.0)
+    clay.diffuse_color = (0.62, 0.6, 0.57, 1.0)
     obj.data.materials.append(clay)
     INFO["faces"] = len(obj.data.polygons)
     return obj
@@ -251,12 +254,12 @@ def aim_lens(area, region):
 def run():
     window, area, region = view()
     obj = import_mesh()
-    frame(area, region, obj, 1.25)
+    frame(area, region, obj, 1.0 if SHOT.startswith("holes") else 1.25)
+    rv3d = area.spaces.active.region_3d
+    framed = (rv3d.view_location.copy(), rv3d.view_distance, rv3d.view_rotation.copy())
     edit(obj)
+    hole = biggest_hole() if SHOT.startswith("holes") else None
     if SHOT.startswith("holes"):
-        hole = biggest_hole()
-        if hole is not None and SHOT.endswith("-zoom"):
-            look_at(area, *hole)
         if SHOT.startswith("holes-after"):
             first_new = len(obj.data.polygons)
             bpy.ops.mesh.quad_transition_solve_all_nonmanifold()
@@ -264,18 +267,54 @@ def run():
             INFO["after"] = biggest_hole() is None
         else:
             select_problems()
-    elif SHOT == "lens":
+    elif SHOT.startswith("lens"):
         with bpy.context.temp_override(window=window, area=area, region=region):
             bpy.ops.mesh.quad_transition_topology_lens("INVOKE_DEFAULT")
     elif SHOT == "paint":
         bpy.ops.object.mode_set(mode="OBJECT")
         paint(obj)
+    # Again last: Auto Solve focuses the view on what it leaves selected.
+    rv3d.view_location, rv3d.view_distance, rv3d.view_rotation = framed
+    if hole is not None and SHOT.endswith("-zoom"):
+        look_at(area, *hole)
     area.tag_redraw()
     bpy.app.timers.register(capture, first_interval=1.5)
 
 
+def lens_picks(area, region):
+    """Screen points of one front-facing vertex per Lens kind."""
+
+    from bpy_extras import view3d_utils
+
+    lens = instances["lens"]
+    lens._refresh()
+    rv3d = area.spaces.active.region_3d
+    eye = rv3d.view_matrix.inverted().translation
+    target = Vector((region.width * 0.45, region.height * 0.55))
+    best = {}
+    for entry in lens._snapshot["verts"]:
+        facing = (entry[2] - eye).normalized().dot(entry[3].normalized())
+        if facing > -0.5:
+            continue
+        screen = view3d_utils.location_3d_to_region_2d(region, rv3d, entry[2])
+        if screen is None or not 0.25 < screen.x / region.width < 0.65:
+            continue
+        distance = (screen - target).length
+        if entry[1] not in best or distance < best[entry[1]][0]:
+            best[entry[1]] = (distance, (screen.x, screen.y))
+    kinds = ("e_pole", "n_pole", "regular", "high_pole", "doublet", "border")
+    return [best[kind][1] for kind in kinds if kind in best]
+
+
+FRAMES: list = []
+
+
 def capture():
     window, area, region = view()
+    if SHOT == "lens-gif":
+        FRAMES.extend(lens_picks(area, region))
+        bpy.app.timers.register(next_frame, first_interval=0.3)
+        return
     if SHOT == "lens":
         aim_lens(area, region)
     area.tag_redraw()
@@ -290,6 +329,29 @@ def shoot():
         bpy.ops.screen.screenshot(filepath=str(OUT))
     print("REAL_MESH_SHOT " + json.dumps(INFO))
     bpy.app.timers.register(quit_blender, first_interval=0.3)
+
+
+def next_frame():
+    window, area, region = view()
+    if not FRAMES:
+        print("REAL_MESH_SHOT " + json.dumps(INFO))
+        bpy.app.timers.register(quit_blender, first_interval=0.3)
+        return
+    instances["mouse"] = FRAMES.pop(0)
+    lens = instances["lens"]
+    lens._mouse, lens._hover_key = instances["mouse"], None
+    area.tag_redraw()
+    bpy.app.timers.register(shoot_frame, first_interval=0.4)
+
+
+def shoot_frame():
+    window, area, region = view()
+    index = INFO.setdefault("frames", 0)
+    path = OUT.with_name(f"{OUT.stem}_{index:02d}.png")
+    with bpy.context.temp_override(window=window, area=area, region=region):
+        bpy.ops.screen.screenshot(filepath=str(path))
+    INFO["frames"] = index + 1
+    bpy.app.timers.register(next_frame, first_interval=0.05)
 
 
 def quit_blender():

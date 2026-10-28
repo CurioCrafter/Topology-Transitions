@@ -7,7 +7,7 @@
 [![Discussions](https://img.shields.io/github/discussions/CurioCrafter/Topology-Transitions)](https://github.com/CurioCrafter/Topology-Transitions/discussions)
 
 <p align="center">
-  <img src="docs/images/paint.gif" width="760" alt="Painting a quad grid across a sculpted head in Blender with Surface Paint; the grid follows the brow ridge and a live coach card counts quads and poles">
+  <img src="docs/images/paint.gif" width="760" alt="Painting quads across the forehead and cheeks of a sculpted head in Blender with Surface Paint; the grid follows the skull and a live coach card counts quads and poles">
 </p>
 
 <p align="center">
@@ -37,7 +37,7 @@ quad topology and edge flow.
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/lens.gif" alt="Topology Lens hovering over a 5-pole, a 3-pole, a regular vertex, a 6+ pole and a doublet, each with an explanation card"></td>
+    <td width="50%"><img src="docs/images/lens.gif" alt="Topology Lens on a game armour mesh, hovering a 5-pole, a 3-pole, a regular vertex and a border vertex, each with an explanation card"></td>
     <td width="50%"><img src="docs/images/mirror.gif" alt="One stroke with Mirror X becoming a symmetric quad band across the forehead"></td>
   </tr>
   <tr>
@@ -61,10 +61,24 @@ quad topology and edge flow.
 Each colour matches a collapsible section of the sidebar, so the panel stays
 short: open only the step you are on.
 
-## What's new in 0.10
+## What's new
 
-0.10 is the biggest update so far, focused on making retopology faster and
-easier to learn:
+**0.11** makes the tools hold up on real production meshes:
+
+- **Auto Solve welds split seams.** glTF exports and AI scans split vertices
+  along UV seams, so most of their "holes" are seams. Auto Solve now welds
+  those first instead of capping them with extra faces: a Tripo scan goes from
+  2,152 open edges to 16 in 0.3 s, a Rodin scan from 9,970 issues to 0 in
+  under a second (it took 100 s before). Find Holes tells you how many open
+  edges are split seams.
+- **Surface Paint fills what it used to miss.** Where a stroke crosses a gap in
+  the surface, such as an eyeball in its socket, the painted area now gets its
+  own patch instead of staying empty, and small scraps are removed. An
+  eye-socket stroke now covers 96% of the painted surface, up from 50%.
+- **Clearer Lens card:** the chips now read "to fix" and "border poles".
+
+**0.10** was the biggest update so far, focused on making retopology faster
+and easier to learn:
 
 - **Surface Paint Quads** replaces the old boundary strip drawing. Paint where
   quads should go; the grid walks over creases like a brow ridge instead of
@@ -136,12 +150,27 @@ supported. Blender 3.6 LTS reached end of life in 2025.
 
 Before release, every main tool was run on a mix of real production meshes:
 AI-generated scans (Rodin, Tripo; 6,000 to 24,000 triangles with hundreds of
-open holes), game character armour (mostly quads with open borders), and a
-low-poly game model. No tool left a non-manifold edge behind, Surface Paint
-produced 120 to 256 clean quads on each in under 0.35 s, and tools that do not
-apply to a mesh (for example the quad optimizer on a triangle mesh) refuse
-with a clear message instead of changing anything. You can run the same sweep
-on your own files with `tests/real_mesh_stress.py`.
+split seams and holes), game character armour (mostly quads with open
+borders), and a low-poly game model.
+
+![A Tripo AI scan before and after Auto Solve: 2,152 open edges down to 16](docs/images/14-auto-solve-ai-scan.png)
+
+| Mesh | Find Holes issues | After Auto Solve | Time |
+| --- | --- | --- | --- |
+| Rodin A059 scan, 24k tris | 9,970 | 0 | 0.9 s |
+| Tripo air receiver scan, 15.6k tris | 3,594 | 0 | 0.4 s |
+| Tripo diving helmet scan, 6k tris | 4,585 | 59 | 0.2 s |
+| Tripo manta statue scan, 6k tris | 2,175 | 32 | 0.3 s |
+| Game boots (FBX), 4.9k faces | 60 | 0 | 0.3 s |
+| Low-poly game creature (DAE), 2k tris | 639 | 0 | 0.1 s |
+| Game armour (FBX), 1.7k faces | 214 | 104 (open borders kept) | 0.2 s |
+
+No tool left an over-connected edge behind, Surface Paint built 130 to 380
+quads on each, and tools that do not apply to a mesh (for example the quad
+optimizer on a triangle mesh) refuse with a clear message instead of changing
+anything. You can run the same sweep on your own files with
+`tests/real_mesh_stress.py`, and capture before/after screenshots of it with
+`scripts/capture_real_mesh.py`.
 
 ## The sidebar
 
@@ -174,6 +203,10 @@ The card in the corner counts quads, tris, n-gons and each pole type. Hover
 any vertex for a card that names it, highlights its edges, and gives a tip on
 what to do with it. Press Esc or click the button again to turn the lens off.
 
+It works the same on real game meshes, such as this armour piece:
+
+![The Topology Lens explaining a 5-pole on a game armour mesh](docs/images/15-lens-game-armour.png)
+
 ## Surface Paint Quads
 
 Paint where you want topology on a high-poly mesh and get a clean quad grid
@@ -188,14 +221,15 @@ that follows the surface:
 While you paint, the green preview is exactly what Enter will build, and the
 coach card counts quads, poles and joins live:
 
-![Surface Paint across the brow ridge, with the live coach card](docs/images/09-surface-paint-live.png)
+![Surface Paint across the forehead and cheeks, with the live coach card](docs/images/09-surface-paint-live.png)
 
-The forehead stroke walks over the brow ridge as one patch. The second stroke
-on the cheek became its own patch, and **Join Patches** connected the two with
-a transition: the magenta pole count shows the poles that join added on
-purpose. After Enter the quads are added to the mesh and selected:
+The forehead stroke follows the curve of the skull as one patch with no
+poles, and each cheek stroke gets a patch of its own. When strokes end up
+close together, **Join Patches** connects them with a transition, and the
+magenta pole count shows the poles that join adds on purpose. After Enter the
+quads are added to the mesh and selected:
 
-![Built Surface Paint quads on the forehead and cheek](docs/images/10-surface-paint-result.png)
+![Built Surface Paint quads on the forehead and both cheeks](docs/images/10-surface-paint-result.png)
 
 **Mirror X** (or the X key) paints both halves. One short stroke on one side
 of the forehead gives a symmetric band with a shared centre seam:
@@ -217,9 +251,11 @@ On a smooth sphere one stroke fills a clean cap:
 | Backspace | Undo the last stroke |
 | Enter / Esc | Build / cancel |
 
-Border vertices can weld onto open edges of the existing mesh. Deep sockets
-and very sharp folds still leave ragged edges or gaps: paint those areas as
-separate strokes, or use a smaller cell. How the grid is built is described in
+Border vertices can weld onto open edges of the existing mesh. Where a stroke
+crosses a gap in the surface (an eyeball in its socket, a separate shell) the
+painted area there gets its own patch. Very rough surfaces, such as rock scans
+with crevices smaller than one quad, still come out as several patches: use a
+larger brush with a larger cell there, or paint smoother areas first. How the grid is built is described in
 [docs/SURFACE_PAINT_AND_BAKING.md](docs/SURFACE_PAINT_AND_BAKING.md).
 
 ## Surface conformity and bake preview
@@ -430,12 +466,15 @@ useful, but it is no longer presented as the whole retopology flow map.
 With one active mesh in Object or Edit Mode, **Auto Solve All Non-Manifold
 Areas** runs the complete safe repair portfolio:
 
-1. exact duplicate faces are removed when they are the cause of an
+1. split seams are welded: open-edge vertices that sit exactly on each other
+   (glTF exports and AI scans split them along UV seams) are merged, unless
+   merging a group would make an edge with more than two faces;
+2. exact duplicate faces are removed when they are the cause of an
    over-connected edge;
-2. wire edges and isolated vertices are removed;
-3. every simple closed open-edge loop is filled;
-4. clean even loops use the lowest-face-count valid quad fan; and
-5. odd loops use a center grid whose required midpoint cuts continue through
+3. wire edges and isolated vertices are removed;
+4. every simple closed open-edge loop is filled;
+5. clean even loops use the lowest-face-count valid quad fan; and
+6. odd loops use a center grid whose required midpoint cuts continue through
    opposite edges of neighboring quad flows.
 
 A triangular hole therefore becomes three quads around one center. Those three
@@ -627,9 +666,11 @@ blender.exe -b --factory-startup --python tests\real_mesh_stress.py -- path\to\m
 ```
 
 README screenshots are reproducible with `scripts/capture_showcase.py` (see
-its docstring) and `scripts/capture_docs.py`; its `paint-gif`, `mirror-gif` and
-`lens-gif` modes save frames that `scripts/make_gifs.py` turns into the README
-GIFs, and `scripts/make_social_preview.py` builds the social preview image.
+its docstring), `scripts/capture_real_mesh.py` (your own mesh files) and
+`scripts/capture_docs.py`. Their GIF modes save frames that
+`scripts/make_gifs.py` turns into the README GIFs and, with ffmpeg on PATH,
+1280x720 MP4 videos in `dist/videos/`. `scripts/make_social_preview.py`
+builds the social preview image.
 
 The Blender smoke is only accepted when it prints
 `QT_BLENDER_SMOKE_PASS`. `tests/installed_smoke.py` verifies the installed ZIP

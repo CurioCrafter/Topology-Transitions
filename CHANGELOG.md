@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.11.0 - 2026-10-28
+
+- **Auto Solve welds split seams.** glTF exports and AI scans split vertices
+  along UV seams; Auto Solve used to cap those seams with extra faces. It now
+  welds open-boundary vertices that sit on each other first (new **Weld Split
+  Seams** option, on by default), skipping any group whose weld would make an
+  over-connected edge. On a Tripo scan issues go 2,175 -> 32 in 0.3 s (was 6 s
+  with seams capped); on a Rodin scan 9,970 -> 0 in 0.9 s (was 100 s).
+- **Find Holes** reports how many open-edge vertices are split seams.
+- **Surface Paint fills painted surface the first patch cannot reach**, such
+  as an eyeball inside its socket: spines and ribs that will not survive
+  cleanup are removed, then new patches start wherever painted surface is
+  still empty. An eye-socket stroke now covers 96% of the painted surface
+  (was 50%); pieces under 6 quads are dropped.
+- The Surface Paint coach card's "stopped" count only counts the strokes' own
+  grids again, so the fill pass does not inflate it.
+- Topology Lens card chips now read "to fix" and "border poles".
+- README: real-mesh results table and before/after images, new Surface Paint
+  shots, and a Lens GIF on a game armour mesh. `scripts/capture_real_mesh.py`
+  captures before/after screenshots on your own mesh files, and
+  `scripts/make_gifs.py` also writes 1280x720 MP4 videos when ffmpeg is on
+  PATH.
+
 ## 0.10.2 - 2026-10-27
 
 - Relicensed from MIT to **GPL-3.0-or-later**, the licence Blender uses and the
