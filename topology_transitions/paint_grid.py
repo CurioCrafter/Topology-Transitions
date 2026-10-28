@@ -19,7 +19,7 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Callable, Hashable, Sequence
 from dataclasses import dataclass
-from math import cos, floor, sin, sqrt
+from math import cos, floor, pi, sin, sqrt
 
 from .core import TransitionError, build_transition_template
 
@@ -37,6 +37,9 @@ MIN_STRETCH = 0.35
 DAB_DEPTH = 1.5
 MAX_STRETCH = 2.0
 BRIDGE_REACH = 4.5
+FILL_GAP = 1.5
+MIN_PIECE_FACES = 6
+GROWING_PIECE_FACES = 4
 INTERIOR_RELAX = 0.5
 BORDER_RELAX = 0.35
 
@@ -199,6 +202,9 @@ class _SpatialHash:
     def add(self, point: Point3) -> None:
         self.buckets.setdefault(self._key(point), []).append(point)
 
+    def remove(self, point: Point3) -> None:
+        self.buckets[self._key(point)].remove(point)
+
     def near(self, point: Point3, radius: float, ignore: Sequence[Point3]) -> bool:
         kx, ky, kz = self._key(point)
         for dx in (-1, 0, 1):
@@ -334,10 +340,10 @@ def _grow(
             )
         return neighbor
 
-    for patch, seed in enumerate(seeds):
+    def grow_from(patch: int, seed: Seed) -> bool:
         start = project(seed.point)
         if start is None:
-            continue
+            return False
         origin, normal = start
         normal = _normalized(normal) or _normalized(seed.normal)
         if (
@@ -345,7 +351,7 @@ def _grow(
             or not coverage.contains(origin)
             or occupied.near(origin, cell, ())
         ):
-            continue
+            return False
         root = (patch, 0, 0)
         positions[root] = origin
         normals[root] = normal
@@ -369,7 +375,120 @@ def _grow(
                 placed = place(node, di, dj)
                 if placed is not None:
                     queue.append(placed)
+        return True
+
+    def drop_strings(patches: set[int]) -> None:
+        # Spines, ribs and spurs that will not survive cleanup would block the
+        # fill pass from starting patches where they lie. Patches never share
+        # nodes, so only the given ones need cleaning.
+        nodes = {node: point for node, point in positions.items() if node[0] in patches}
+        faced = _faced_nodes(nodes)
+        for node, point in nodes.items():
+            if node not in faced:
+                del positions[node], normals[node], frames[node]
+                occupied.remove(point)
+
+    for patch, seed in enumerate(seeds):
+        grow_from(patch, seed)
+    drop_strings(set(range(len(seeds))))
+    # A lattice cannot walk across a gap in the surface (an eyeball inside its
+    # socket, a separate shell), so painted surface the stroke seeds never
+    # reached gets its own patch, oriented like the nearest stroke; joining
+    # connects the patches afterwards.
+    patch = len(seeds)
+    for dab in coverage.dabs:
+        if dab.erase:
+            continue
+        for point in _dab_samples(dab, cell):
+            if occupied.near(point, cell * FILL_GAP, ()):
+                continue
+            nearest = min(seeds, key=lambda seed: _distance(seed.point, point))
+            normal = dab.normal or nearest.normal
+            if grow_from(patch, Seed(point, normal, nearest.flow)):
+                drop_strings({patch})
+                patch += 1
     return positions, normals, stats["folds"], stats["overlaps"]
+
+
+def _lattice_faces(positions: dict[Node, Point3]) -> list[Face]:
+    return [
+        (node, _shift(node, 1, 0), _shift(node, 1, 1), _shift(node, 0, 1))
+        for node in sorted(positions)
+        if _shift(node, 1, 0) in positions
+        and _shift(node, 1, 1) in positions
+        and _shift(node, 0, 1) in positions
+    ]
+
+
+def _faced_nodes(positions: dict[Node, Point3]) -> set[Node]:
+    """Nodes that survive cleanup. Repeated until stable: the corners left by
+    one cleanup can form new lattice cells that need cleaning again."""
+
+    nodes = set(positions)
+    while True:
+        faces, _pruned = clean_faces(_lattice_faces(dict.fromkeys(nodes)))
+        # Growing pieces keep a lower bar than the final result: a small piece
+        # may still be joined to its neighbours.
+        faces, _small = drop_small_pieces(faces, GROWING_PIECE_FACES)
+        kept = {node for face in faces for node in face}
+        if kept == nodes:
+            return kept
+        nodes = kept
+
+
+def _dab_samples(dab: Dab, cell: float) -> list[Point3]:
+    """The dab centre plus rings about one cell apart across the brush disc,
+    repeated through the dab's column (nearest layers first) so a socket
+    floor or a bulge in front of the stroke is sampled too."""
+
+    if dab.normal is None:
+        return [dab.center]
+    u, v = _frame(dab.normal, (1.0, 0.0, 0.0), 0.0)
+    disc = [(0.0, 0.0, 0.0)]
+    rings = max(1, int(dab.radius / cell))
+    for ring in range(1, rings + 1):
+        distance = dab.radius * ring / (rings + 0.25)
+        count = max(6, int(2.0 * pi * distance / cell))
+        for index in range(count):
+            angle = 2.0 * pi * index / count
+            offset = _add(_scale(u, cos(angle)), _scale(v, sin(angle)))
+            disc.append(_scale(offset, distance))
+    samples = []
+    layers = max(1, int(DAB_DEPTH * dab.radius / cell))
+    for layer in sorted(range(-layers, layers + 1), key=abs):
+        depth = DAB_DEPTH * dab.radius * layer / layers
+        level = _sub(dab.center, _scale(dab.normal, depth))
+        samples.extend(_add(level, offset) for offset in disc)
+    return samples
+
+
+def drop_small_pieces(
+    faces: Sequence[Face], minimum: int = MIN_PIECE_FACES
+) -> tuple[list[Face], int]:
+    """Remove edge-connected pieces too small to be useful retopology."""
+
+    by_edge: dict[tuple[Node, Node], list[int]] = {}
+    for index, face in enumerate(faces):
+        for edge in face_edges(face):
+            by_edge.setdefault(edge, []).append(index)
+    piece = [-1] * len(faces)
+    kept = []
+    for start in range(len(faces)):
+        if piece[start] >= 0:
+            continue
+        members, queue = [start], deque([start])
+        piece[start] = start
+        while queue:
+            for edge in face_edges(faces[queue.popleft()]):
+                for other in by_edge[edge]:
+                    if piece[other] < 0:
+                        piece[other] = start
+                        members.append(other)
+                        queue.append(other)
+        if len(members) >= minimum:
+            kept.extend(members)
+    kept.sort()
+    return [faces[index] for index in kept], len(faces) - len(kept)
 
 
 def _fans(node: Node, faces: Sequence[Face]) -> list[list[Face]]:
@@ -890,14 +1009,7 @@ def grow_paint_grid(
     )
     if not positions:
         raise TransitionError("No painted stroke starts on the surface target")
-    faces = [
-        (node, _shift(node, 1, 0), _shift(node, 1, 1), _shift(node, 0, 1))
-        for node in sorted(positions)
-        if _shift(node, 1, 0) in positions
-        and _shift(node, 1, 1) in positions
-        and _shift(node, 0, 1) in positions
-    ]
-    faces, pruned = clean_faces(faces)
+    faces, pruned = clean_faces(_lattice_faces(positions))
     bridges = 0
     if bridge and faces:
         positions, faces, bridges = bridge_patches(positions, faces, cell)
@@ -931,9 +1043,12 @@ def grow_paint_grid(
                 if not any(_bridge_tag(node) in failed for node in face)
             ]
             bridges -= len(failed)
-            used = {node for face in faces for node in face}
-            positions = {node: positions[node] for node in used}
-            normals = {node: normals[node] for node in used}
+    # Last, so a dropped join cannot leave a scrap behind.
+    faces, small = drop_small_pieces(faces)
+    pruned += small
+    used = {node for face in faces for node in face}
+    positions = {node: positions[node] for node in used}
+    normals = {node: normals[node] for node in used}
     if mirror is not None and faces:
         faces = mirror_faces(positions, normals, faces, mirror, cell, seeds[0].point)
         used = {node for face in faces for node in face}

@@ -28,8 +28,22 @@ def plane(point):
 
 def sphere(point):
     length = sqrt(sum(value * value for value in point))
+    if length == 0.0:
+        return None
     unit = tuple(value / length for value in point)
     return unit, unit
+
+
+def step(point):
+    """Two flat levels with a gap a lattice cannot walk across: z = 0 for
+    x < 0 and z = -0.5 for x > 0.1."""
+
+    x, y, z = point
+    upper = (min(x, 0.0), y, 0.0)
+    lower = (max(x, 0.1), y, -0.5)
+    near_upper = sum((a - b) ** 2 for a, b in zip(point, upper))
+    near_lower = sum((a - b) ** 2 for a, b in zip(point, lower))
+    return (upper if near_upper <= near_lower else lower), (0.0, 0.0, 1.0)
 
 
 def roof(point):
@@ -226,6 +240,20 @@ class PaintGridTests(unittest.TestCase):
             if all(abs(grid.positions[n][0]) < 1.0e-9 for n in edge)
         ]
         self.assertTrue(on_seam)
+
+    def test_painted_surface_across_a_gap_gets_its_own_patch(self) -> None:
+        grid = grow_paint_grid(
+            [Dab((0.0, 0.0, 0.0), 0.8, normal=(0.0, 0.0, 1.0))],
+            cell=0.1,
+            seeds=[Seed((-0.6, 0.0, 0.0), (0.0, 0.0, 1.0), (1.0, 0.0, 0.0))],
+            flow_angle=0.0,
+            project=step,
+            bridge=False,
+        )
+        heights = [max(grid.positions[node][2] for node in face) for face in grid.faces]
+        self.assertTrue(any(height > -0.01 for height in heights))
+        self.assertGreater(sum(height < -0.49 for height in heights), 10)
+        self.assertTrue(all(count <= 2 for count in edges_of(grid.faces).values()))
 
     def test_erased_seed_is_rejected(self) -> None:
         with self.assertRaises(TransitionError):
