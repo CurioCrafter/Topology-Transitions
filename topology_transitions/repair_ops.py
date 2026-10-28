@@ -592,6 +592,73 @@ def _remove_overconnected_duplicate_faces(bm: Any) -> int:
     return len(duplicates)
 
 
+SEAM_WELD_FRACTION = 1.0e-6
+
+
+def _seam_tolerance(bm: Any) -> float:
+    points = [vertex.co for vertex in bm.verts]
+    size = max(
+        max(point[axis] for point in points) - min(point[axis] for point in points)
+        for axis in range(3)
+    )
+    return max(size * SEAM_WELD_FRACTION, 1.0e-9)
+
+
+def split_seam_groups(bm: Any) -> list[list[Any]]:
+    """Open-boundary vertices that sit on each other, grouped by position.
+
+    Exporters (glTF, many AI scan tools) split vertices along UV seams, so
+    the mesh looks closed but every seam is a pair of open edges. Welding
+    those vertices is the right repair; capping them would add faces.
+    """
+
+    boundary = {
+        vertex
+        for edge in bm.edges
+        if len(edge.link_faces) == 1
+        for vertex in edge.verts
+    }
+    if not boundary:
+        return []
+    tolerance = _seam_tolerance(bm)
+    buckets: dict[tuple[int, ...], list[Any]] = {}
+    for vertex in boundary:
+        key = tuple(round(value / tolerance) for value in vertex.co)
+        buckets.setdefault(key, []).append(vertex)
+    return [group for group in buckets.values() if len(group) > 1]
+
+
+def _weld_split_seams(bm: Any) -> int:
+    """Weld split seams, skipping any group whose weld would make an edge
+    with more than two faces (folded or doubled scan geometry)."""
+
+    groups = split_seam_groups(bm)
+    target = {vertex: group[0] for group in groups for vertex in group[1:]}
+    for _attempt in range(4):
+        faces = {face for vertex in target for face in vertex.link_faces}
+        counts: Counter = Counter()
+        for face in faces:
+            for edge in face.edges:
+                counts[frozenset(target.get(v, v) for v in edge.verts)] += 1
+        bad = {vertex for key, count in counts.items() if count > 2 for vertex in key}
+        unsafe = [
+            group
+            for group in groups
+            if group[0] in bad or any(target.get(v) in bad for v in group[1:])
+        ]
+        if not unsafe:
+            break
+        for group in unsafe:
+            for vertex in group[1:]:
+                target.pop(vertex, None)
+        groups = [group for group in groups if group not in unsafe]
+    else:
+        return 0
+    if target:
+        bmesh.ops.weld_verts(bm, targetmap=target)
+    return len(target)
+
+
 def _remove_loose_geometry(bm: Any) -> tuple[int, int]:
     wire_edges = [edge for edge in bm.edges if not edge.link_faces]
     if wire_edges:
@@ -759,6 +826,7 @@ def solve_all_nonmanifold(
     remove_loose: bool = True,
     remove_duplicate_faces: bool = True,
     maximum_faces: int = MAX_PROPAGATED_FACES,
+    weld_split_seams: bool = True,
 ) -> dict[str, Any]:
     """Repair every safely solvable manifold defect on the active mesh.
 
@@ -783,10 +851,14 @@ def solve_all_nonmanifold(
         "duplicate_faces_removed": 0,
         "wire_edges_removed": 0,
         "isolated_vertices_removed": 0,
+        "seam_vertices_welded": 0,
         "failures": [],
         "made_single_user": False,
     }
     try:
+        if weld_split_seams:
+            # First, so seams are welded instead of capped with extra faces.
+            stats["seam_vertices_welded"] = _weld_split_seams(working)
         if remove_duplicate_faces:
             stats["duplicate_faces_removed"] = _remove_overconnected_duplicate_faces(
                 working
@@ -1045,6 +1117,14 @@ class QT_OT_solve_all_nonmanifold(Operator):
         ),
         default=True,
     )
+    weld_split_seams: BoolProperty(
+        name="Weld Split Seams",
+        description=(
+            "Merge open-boundary vertices that sit exactly on each other (seams "
+            "split by exporters and AI scans) before closing real holes"
+        ),
+        default=True,
+    )
     maximum_faces: IntProperty(
         name="Maximum Propagated Faces",
         description="Safety limit for quad-flow cuts created by one boundary repair",
@@ -1070,6 +1150,7 @@ class QT_OT_solve_all_nonmanifold(Operator):
                 remove_loose=self.remove_loose,
                 remove_duplicate_faces=self.remove_duplicate_faces,
                 maximum_faces=self.maximum_faces,
+                weld_split_seams=self.weld_split_seams,
             )
         except TransitionError as exc:
             self.report({"ERROR"}, str(exc))
@@ -1092,6 +1173,12 @@ class QT_OT_solve_all_nonmanifold(Operator):
             f"with {stats['target_quads']} target quads; cleaned {cleanup_count} "
             "loose/duplicate elements"
         )
+        if stats["seam_vertices_welded"]:
+            summary = (
+                f"Welded {stats['seam_vertices_welded']} split-seam vertices; "
+                + summary[0].lower()
+                + summary[1:]
+            )
         if stats["made_single_user"]:
             summary += "; made the active linked mesh single-user"
         if report.clean:

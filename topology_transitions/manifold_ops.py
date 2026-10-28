@@ -132,6 +132,15 @@ class QT_OT_check_manifold(Operator):
             f"{len(report.inconsistent_winding_edges)} winding, "
             f"{len(report.disconnected_fan_vertices)} vertex-fan issues",
         )
+        from .repair_ops import split_seam_groups
+
+        seam = sum(len(group) for group in split_seam_groups(bm))
+        if seam:
+            self.report(
+                {"INFO"},
+                f"{seam} open-edge vertices sit on top of each other: split seams "
+                "from an exporter, not real holes. Auto Solve welds them first",
+            )
         return {"FINISHED"}
 
 

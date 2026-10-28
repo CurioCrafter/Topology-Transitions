@@ -77,6 +77,7 @@ def _draw_mesh_integrity(layout, settings, *, edit_mode: bool) -> None:
         text="Auto Solve All Non-Manifold Areas",
         icon="MOD_REMESH",
     )
+    integrity.label(text="Split seams are welded, not capped")
     integrity.label(text="Even holes use the quickest quad fan")
     integrity.label(text="Triangular holes become three quad flows")
 

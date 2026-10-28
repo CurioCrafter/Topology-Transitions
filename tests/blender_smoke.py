@@ -1245,10 +1245,36 @@ def assert_auto_nonmanifold_solver() -> None:
         or not any(edge.select for edge in bm.edges if len(edge.link_faces) > 2)
     ):
         raise AssertionError("Ambiguous over-connected sheet was not retained/selected")
+    bpy.ops.object.mode_set(mode="OBJECT")
+
+    # The top face has its own copies of its four corners: a split seam, as
+    # glTF exports and AI scans have. It must be welded, not capped.
+    corners = [(x, y, z) for z in (0, 1) for y in (0, 1) for x in (0, 1)]
+    seamed = create_custom_mesh(
+        "split_seam_cube",
+        (*corners, (0, 0, 1), (1, 0, 1), (1, 1, 1), (0, 1, 1)),
+        (
+            (0, 2, 3, 1),
+            (0, 1, 5, 4),
+            (1, 3, 7, 5),
+            (3, 2, 6, 7),
+            (2, 0, 4, 6),
+            (8, 9, 10, 11),
+        ),
+    )
+    result = bpy.ops.mesh.quad_transition_solve_all_nonmanifold()
+    bm = bmesh.from_edit_mesh(seamed.data)
+    if (
+        result != {"FINISHED"}
+        or len(bm.verts) != 8
+        or len(bm.faces) != 6
+        or any(len(edge.link_faces) != 2 for edge in bm.edges)
+    ):
+        raise AssertionError("Split seam was not welded into a closed cube")
     print(
         "QT_AUTO_MANIFOLD_PASS cube_hole_quads=1 triangle_hole_quads=3 "
         "tetra_total_quads=12 duplicate_removed=1 linked_safe=1 "
-        "loose_removed=3 ambiguous_selected=1"
+        "loose_removed=3 ambiguous_selected=1 seam_welded=4"
     )
 
 
