@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.12.1 - 2026-10-30
 
 - **Face Loops** (Flow Browser): in Edit Mode, hover a quad to see the face
   loop along the edge nearest the mouse; the wheel or arrow keys step to the
