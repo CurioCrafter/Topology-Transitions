@@ -488,6 +488,16 @@ class QT_PT_flow(_Child):
     def draw(self, context):
         layout = self.layout
         settings = context.scene.topology_transitions
+        loops = layout.box()
+        loops.label(text="Face Loops", icon="FACESEL")
+        _hint(loops, "Edit Mode: hover a quad, scroll through its loops")
+        row = loops.row()
+        row.scale_y = 1.3
+        row.operator(
+            "mesh.quad_transition_face_loops", text="Scroll Face Loops", icon="FACESEL"
+        )
+        _hint(loops, "Wheel next loop | R turn | F flip | Click select")
+
         flow = layout.box()
         flow.label(text="Quad Flow Scroll")
         _hint(flow, "Browse whole pole-bounded quad regions")

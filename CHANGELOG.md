@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Face Loops** (Flow Browser): in Edit Mode, hover a quad to see the face
+  loop along the edge nearest the mouse; the wheel or arrow keys step to the
+  next parallel loop, R turns the loop the other way, F flips its faces, and
+  Click / Shift+Click select loops. Esc restores the previous selection.
+
 ## 0.12.0 - 2026-10-29
 
 - **Live Boolean** (Repair & Modify): cut, join or intersect the active mesh

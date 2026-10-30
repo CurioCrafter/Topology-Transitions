@@ -309,7 +309,34 @@ def main():
         bpy.context.view_layer.objects.active = source
         return detail
 
+    def face_loops():
+        from topology_transitions.face_loop_ops import face_loop, next_loop
+
+        edit(source)
+        bm = bmesh.from_edit_mesh(source.data)
+        loops, closed, longest, steps = set(), 0, 0, 0
+        for face in bm.faces:
+            if len(face.verts) != 4:
+                continue
+            edges = [loop.edge for loop in face.loops]
+            for crossing, side in ((edges[0], edges[1]), (edges[1], edges[0])):
+                faces, is_closed = face_loop(face, crossing)
+                key = frozenset(f.index for f in faces)
+                if key in loops:
+                    continue
+                loops.add(key)
+                closed += is_closed
+                longest = max(longest, len(faces))
+                steps += next_loop(face, crossing, side) is not None
+        return {
+            "loops": len(loops),
+            "closed": closed,
+            "longest": longest,
+            "steppable": steps,
+        }
+
     for name, function in (
+        ("face_loops", face_loops),
         ("part_cages", part_cages),
         ("live_boolean", live_boolean),
         ("manifold", manifold),

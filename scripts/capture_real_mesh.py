@@ -15,6 +15,7 @@ Shots:
 - cages: Part Cages fitted to a stand-in high-poly (the mesh subdivided
   and pushed out 2%).
 - boolean: Live Boolean with a cylinder cutter through the mesh.
+- loops: Face Loops on the longest loop, stepped two loops over.
 
 Each run imports the file, joins its meshes, saves one PNG and quits. The
 view looks at the mesh from the front (-Y) and slightly from the side.
@@ -68,6 +69,10 @@ def spy(cls, key):
 
 
 spy(lens_ops.QT_OT_topology_lens, "lens")
+
+from topology_transitions import face_loop_ops  # noqa: E402
+
+spy(face_loop_ops.QT_OT_face_loops, "loops")
 
 
 def view():
@@ -275,6 +280,10 @@ def run():
     elif SHOT == "paint":
         bpy.ops.object.mode_set(mode="OBJECT")
         paint(obj)
+    elif SHOT == "loops":
+        with bpy.context.temp_override(window=window, area=area, region=region):
+            bpy.ops.mesh.quad_transition_face_loops("INVOKE_DEFAULT")
+        show_loops(obj)
     elif SHOT == "cages":
         bpy.ops.object.mode_set(mode="OBJECT")
         part_cages(obj, window, area, region)
@@ -287,6 +296,28 @@ def run():
         look_at(area, *hole)
     area.tag_redraw()
     bpy.app.timers.register(capture, first_interval=1.5)
+
+
+def show_loops(obj):
+    """Highlight a long face loop, then step two loops over, as the wheel does."""
+
+    tool = instances["loops"]
+    best = None
+    for face in tool._bm.faces:
+        if len(face.verts) != 4:
+            continue
+        edges = [loop.edge for loop in face.loops]
+        faces, _closed = face_loop_ops.face_loop(face, edges[0])
+        steppable = all(
+            face_loop_ops.next_loop(face, edges[0], side) is not None
+            for side in (edges[1], edges[3])
+        )
+        if steppable and (best is None or len(faces) > best[0]):
+            best = (len(faces), face, edges[0], edges[1])
+    if best is not None:
+        tool._set(best[1], best[2], best[3])
+        tool._step(True)
+        tool._step(True)
 
 
 def part_cages(obj, window, area, region):

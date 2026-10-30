@@ -2296,6 +2296,50 @@ def assert_directional_merge() -> None:
     )
 
 
+def assert_face_loops() -> dict:
+    from topology_transitions.face_loop_ops import face_loop, next_loop
+
+    clear_scene()
+    # A 5 x 3 grid of quads: loops along X have 5 faces, along Y 3 faces.
+    bpy.ops.mesh.primitive_grid_add(x_subdivisions=5, y_subdivisions=3, size=2.0)
+    grid = bpy.context.active_object
+    bpy.ops.object.mode_set(mode="EDIT")
+    bm = bmesh.from_edit_mesh(grid.data)
+    bm.faces.ensure_lookup_table()
+    face = bm.faces[0]
+    edges = [loop.edge for loop in face.loops]
+    lengths = sorted(len(face_loop(face, edge)[0]) for edge in edges[:2])
+    if lengths != [3, 5]:
+        raise AssertionError(f"Grid face loops have {lengths} quads, expected 3 and 5")
+    # Step across every parallel loop on one side: a corner quad has 4 or 2
+    # neighbours in the other direction, so the walk ends after 4 or 2 steps.
+    crossing, side = edges[0], edges[1]
+    loop_faces, _closed = face_loop(face, crossing)
+    stepped, state = 0, (face, crossing, side)
+    seen = {frozenset(loop_faces)}
+    while (state := next_loop(*state)) is not None:
+        faces = frozenset(face_loop(state[0], state[1])[0])
+        if faces in seen or len(faces) != len(loop_faces):
+            raise AssertionError("Stepping repeated a loop or changed its direction")
+        seen.add(faces)
+        stepped += 1
+    if stepped not in (2, 4):
+        raise AssertionError(f"Stepped through {stepped} parallel loops")
+    bpy.ops.object.mode_set(mode="OBJECT")
+
+    clear_scene()
+    bpy.ops.mesh.primitive_cube_add()
+    cube = bpy.context.active_object
+    bpy.ops.object.mode_set(mode="EDIT")
+    bm = bmesh.from_edit_mesh(cube.data)
+    bm.faces.ensure_lookup_table()
+    faces, closed = face_loop(bm.faces[0], bm.faces[0].loops[0].edge)
+    if not closed or len(faces) != 4:
+        raise AssertionError("A face loop around a cube should close with 4 quads")
+    bpy.ops.object.mode_set(mode="OBJECT")
+    return {"grid_loops": lengths, "stepped": stepped, "cube_closed": closed}
+
+
 def assert_part_cages() -> dict:
     from topology_transitions.part_cage_ops import (
         PART_DISTANCES_KEY,
@@ -2432,7 +2476,11 @@ def main() -> None:
         assert_shape_key_is_unchanged()
         cages = assert_part_cages()
         cut = assert_live_boolean_cleanup()
-        print(f"QT_NEW_TOOLS_PASS part_cages={cages} live_boolean={cut}")
+        loops = assert_face_loops()
+        print(
+            f"QT_NEW_TOOLS_PASS part_cages={cages} live_boolean={cut} "
+            f"face_loops={loops}"
+        )
         print(
             "QT_BLENDER_SMOKE_PASS patterns=13 single_quad=10 rejection_cases=2 "
             "preview=1 external_projection=1 quad_flow=3 example_atlas=1 "

@@ -55,7 +55,7 @@ quad topology and edge flow.
 | 🟢 | **Surface Paint** | Paint where quads should go. A grid that walks over creases fills the paint, separate strokes join with transitions, and Mirror X paints both halves. |
 | 🩷 | **Transitions** | Replace a quad patch with an all-quad 5 -> 3, 3 -> 5, 3 -> 1, 1 -> 3, 4 -> 2, 2 -> 4, 1 -> 2 or 2 -> 1 transition. |
 | 🟠 | **Repair & Modify** | **Live Boolean** cuts with a live tri/n-gon count, then repairs the cut into quads; turn selected tris and n-gons into quads; remove repetitive remesher loops without creating triangles. |
-| 🟣 | **Flow Browser** | Scroll through pole-bounded quad regions to read how a mesh flows. |
+| 🟣 | **Flow Browser** | **Face Loops**: hover a quad and scroll through its face loops, turn or flip them; scroll through pole-bounded quad regions to read how a mesh flows. |
 | 🟡 | **Merge & Cleanup** | Directional merge, delete faces by axis, and connect two meshes. |
 | 🔴 | **Surface & Bake** | **Part Cages** gives every separate part its own bake-cage distance and shows clashes live; Shrinkwrap, exact bake cages, and a ray preview before you bake. |
 
@@ -285,6 +285,25 @@ painted area there gets its own patch. Very rough surfaces, such as rock scans
 with crevices smaller than one quad, still come out as several patches: use a
 larger brush with a larger cell there, or paint smoother areas first. How the grid is built is described in
 [docs/SURFACE_PAINT_AND_BAKING.md](docs/SURFACE_PAINT_AND_BAKING.md).
+
+## Face Loops
+
+Scroll through the face loops of any quad mesh:
+
+1. In Edit Mode, **Flow Browser -> Scroll Face Loops**.
+2. Hover a quad: the loop that runs along the edge nearest the mouse lights up,
+   and the card says how many quads it has and whether it closes on itself or
+   ends at a pole or border.
+3. The **mouse wheel** (or the arrow keys) steps to the next parallel loop on
+   either side, so you can sweep across a whole region loop by loop.
+4. **R** turns the loop the other way through the same quad, **F** flips the
+   face orientation of the loop, **Click** selects it and **Shift+Click** adds
+   it. **Enter** keeps the selection, **Esc** restores the one you had.
+
+![Face Loops on a game armour mesh: a closed loop of 92 quads, two loops over from where the mouse started](docs/images/18-face-loops.png)
+
+Zoom with Ctrl+MMB drag or Numpad +/- while the tool runs; the wheel is used
+for stepping.
 
 ## Live Boolean
 
