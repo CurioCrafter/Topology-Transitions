@@ -19,9 +19,10 @@
 **A free Blender add-on that teaches topology while you build it.** Paint
 quads straight onto a high-poly sculpt for retopology, see every pole light up
 as you edit, and place real edge-loop transitions (5 -> 3, 3 -> 1, ...)
-exactly where the mesh density needs to change. It also finds holes and
-non-manifold geometry, turns triangles and n-gons into quads, and cleans up
-dense remesher output.
+exactly where the mesh density needs to change. Cut with a live Boolean that
+shows the triangles and n-gons it makes and repairs them into quads, fit a bake
+cage to every separate part of a game asset, find and fix holes in AI scans,
+and clean up dense remesher output.
 
 Built for game assets, VR and real-time models, and anyone learning clean
 quad topology and edge flow.
