@@ -684,7 +684,8 @@ class QT_PT_bake(_Child):
         settings = context.scene.topology_transitions
         cages = layout.box()
         cages.label(text="Part Cages", icon="MOD_SOLIDIFY")
-        _hint(cages, "Object Mode: select high-poly, then the low-poly")
+        _hint(cages, "Object Mode: low-poly active; high-poly selected")
+        _hint(cages, "or picked as Surface Target")
         row = cages.row()
         row.scale_y = 1.3
         row.operator(

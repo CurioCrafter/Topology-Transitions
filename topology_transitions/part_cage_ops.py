@@ -253,7 +253,8 @@ class QT_OT_part_cages(Operator):
     bl_label = "Part Cages"
     bl_description = (
         "Live bake-cage editor: every loose part of the active low-poly mesh gets "
-        "its own cage distance, fitted to the selected high-poly objects; cages "
+        "its own cage distance, fitted to the selected high-poly objects (or the "
+        "Surface Target); cages "
         "that run into another part are drawn red"
     )
     bl_options = {"REGISTER", "UNDO"}
@@ -276,6 +277,9 @@ class QT_OT_part_cages(Operator):
             if obj is not low and obj.type == "MESH" and not obj.get(CAGE_ROLE_KEY)
         ]
         settings = context.scene.topology_transitions
+        target = settings.surface_target
+        if not highs and target is not None and target is not low:
+            highs = [target]
         try:
             self._plan = PartCagePlan(low, settings.bake_cage_distance)
             self._tree = high_poly_tree(context, highs)
@@ -426,7 +430,10 @@ class QT_OT_part_cages(Operator):
                     "chip",
                     hud.CORAL if clashes else hud.TEAL,
                     "runs into part "
-                    + ", ".join(str((a if b == part else b) + 1) for a, b in clashes)
+                    + ", ".join(
+                        str((a if b == part else b) + 1) for a, b in clashes[:5]
+                    )
+                    + (f" +{len(clashes) - 5} more" if len(clashes) > 5 else "")
                     if clashes
                     else "clear",
                 ),

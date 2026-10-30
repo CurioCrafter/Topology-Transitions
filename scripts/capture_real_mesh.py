@@ -12,6 +12,9 @@ Shots:
 - lens: the Topology Lens with its card on a front-facing 5-pole.
 - lens-gif: one frame per pole kind hovered (<out stem>_NN.png).
 - paint: a Surface Paint stroke across the front of the mesh.
+- cages: Part Cages fitted to a stand-in high-poly (the mesh subdivided
+  and pushed out 2%).
+- boolean: Live Boolean with a cylinder cutter through the mesh.
 
 Each run imports the file, joins its meshes, saves one PNG and quits. The
 view looks at the mesh from the front (-Y) and slightly from the side.
@@ -272,12 +275,55 @@ def run():
     elif SHOT == "paint":
         bpy.ops.object.mode_set(mode="OBJECT")
         paint(obj)
+    elif SHOT == "cages":
+        bpy.ops.object.mode_set(mode="OBJECT")
+        part_cages(obj, window, area, region)
+    elif SHOT == "boolean":
+        bpy.ops.object.mode_set(mode="OBJECT")
+        live_boolean(obj, window, area, region)
     # Again last: Auto Solve focuses the view on what it leaves selected.
     rv3d.view_location, rv3d.view_distance, rv3d.view_rotation = framed
     if hole is not None and SHOT.endswith("-zoom"):
         look_at(area, *hole)
     area.tag_redraw()
     bpy.app.timers.register(capture, first_interval=1.5)
+
+
+def part_cages(obj, window, area, region):
+    high = obj.copy()
+    high.data = obj.data.copy()
+    high.name = f"{obj.name} high (stand-in)"
+    bpy.context.collection.objects.link(high)
+    high.modifiers.new("sub", "SUBSURF").levels = 1
+    push = high.modifiers.new("push", "DISPLACE")
+    push.strength = max(obj.dimensions) * 0.02
+    high.hide_set(True)
+    bpy.context.scene.topology_transitions.surface_target = high
+    bpy.ops.object.select_all(action="DESELECT")
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+    with bpy.context.temp_override(window=window, area=area, region=region):
+        bpy.ops.object.quad_transition_part_cages("INVOKE_DEFAULT")
+
+
+def live_boolean(obj, window, area, region):
+    corners = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
+    low, high = Vector(map(min, *corners)), Vector(map(max, *corners))
+    size = high - low
+    bpy.ops.mesh.primitive_cylinder_add(
+        vertices=16,
+        radius=min(size.x, size.z) * 0.16,
+        depth=size.y * 3,
+        location=(low + high) / 2 + Vector((size.x * 0.1, 0, size.z * 0.1)),
+        rotation=(1.5708, 0.0, 0.0),
+    )
+    cutter = bpy.context.active_object
+    bpy.ops.object.select_all(action="DESELECT")
+    cutter.select_set(True)
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+    with bpy.context.temp_override(window=window, area=area, region=region):
+        bpy.ops.object.quad_transition_live_boolean("INVOKE_DEFAULT")
 
 
 def lens_picks(area, region):
