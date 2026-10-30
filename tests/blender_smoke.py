@@ -82,11 +82,7 @@ def create_paint_fixture(name: str, lanes: int):
     target = bpy.data.objects.new(f"{name}_target", target_mesh)
     bpy.context.collection.objects.link(target)
 
-    vertices = [
-        (float(x), float(y), 0.5)
-        for y in range(2)
-        for x in range(lanes + 1)
-    ]
+    vertices = [(float(x), float(y), 0.5) for y in range(2) for x in range(lanes + 1)]
     faces = []
     for x in range(lanes):
         lower = x
@@ -107,9 +103,7 @@ def create_paint_fixture(name: str, lanes: int):
     for face in bm.faces:
         face.select_set(False)
     for edge in bm.edges:
-        edge.select_set(
-            all(abs(vertex.co.y - 1.0) < 1.0e-6 for vertex in edge.verts)
-        )
+        edge.select_set(all(abs(vertex.co.y - 1.0) < 1.0e-6 for vertex in edge.verts))
     bm.select_flush_mode()
     bmesh.update_edit_mesh(mesh, loop_triangles=True, destructive=False)
     return retopo, target
@@ -429,16 +423,12 @@ def assert_single_quad_transition(preset: str, *, padding: int = 1) -> None:
         raise AssertionError(
             f"{preset}: expected {expected_total} total faces, found {len(bm.faces)}"
         )
-    if any(
-        len(face.verts) != 4 or face.calc_area() <= 1.0e-12 for face in bm.faces
-    ):
+    if any(len(face.verts) != 4 or face.calc_area() <= 1.0e-12 for face in bm.faces):
         raise AssertionError(f"{preset}: generated a zero-area or non-quad face")
     if any(len(edge.link_faces) > 2 for edge in bm.edges):
         raise AssertionError(f"{preset}: generated a non-manifold edge")
 
-    inserted_vertices = {
-        vertex for face in selected_faces for vertex in face.verts
-    }
+    inserted_vertices = {vertex for face in selected_faces for vertex in face.verts}
     if any(abs(vertex.co.z) > 1.0e-7 for vertex in inserted_vertices):
         raise AssertionError(f"{preset}: planar insertion moved away from the source")
 
@@ -1364,8 +1354,7 @@ def assert_quad_flow_optimization() -> None:
     ]
     uv_error = max(
         (
-            loop[uv_layer].uv
-            - Vector((loop.vert.co.x / 8.0, loop.vert.co.y / 8.0))
+            loop[uv_layer].uv - Vector((loop.vert.co.x / 8.0, loop.vert.co.y / 8.0))
         ).length
         for face in bm.faces
         for loop in face.loops
@@ -1391,11 +1380,7 @@ def assert_quad_flow_optimization() -> None:
         offset = len(vertices)
         for y in range(5):
             for x in range(5):
-                z = (
-                    0.0
-                    if region == 0
-                    else 0.35 * ((x - 2.0) ** 2 + (y - 2.0) ** 2)
-                )
+                z = 0.0 if region == 0 else 0.35 * ((x - 2.0) ** 2 + (y - 2.0) ** 2)
                 vertices.append((float(x + region * 8), float(y), z))
         for y in range(4):
             for x in range(4):
@@ -1480,8 +1465,7 @@ def assert_quad_flow_optimization() -> None:
     def reject_large_batch(test_bm, candidates, selected_ids, options):
         if len(selected_ids) > 2:
             raise optimize_ops.QuadOptimizeError(
-                "Candidate batch changed protected topology "
-                "(boundary components 1->2)"
+                "Candidate batch changed protected topology (boundary components 1->2)"
             )
         return original_apply_batch(test_bm, candidates, selected_ids, options)
 
@@ -1691,8 +1675,7 @@ def assert_target_mesh_connector() -> None:
     clear_scene()
     source_mesh = bpy.data.meshes.new("connector_source_mesh")
     source_mesh.from_pydata(
-        ((-0.5, -0.5, 0.05), (0.5, -0.5, 0.05),
-         (0.5, 0.5, 0.05), (-0.5, 0.5, 0.05)),
+        ((-0.5, -0.5, 0.05), (0.5, -0.5, 0.05), (0.5, 0.5, 0.05), (-0.5, 0.5, 0.05)),
         (),
         ((0, 1, 2, 3),),
     )
@@ -1703,10 +1686,14 @@ def assert_target_mesh_connector() -> None:
     target_mesh = bpy.data.meshes.new("connector_target_mesh")
     target_mesh.from_pydata(
         (
-            (-1.5, -0.5, 0.0), (-0.5, -0.5, 0.0),
-            (0.5, -0.5, 0.0), (1.5, -0.5, 0.0),
-            (-1.5, 0.5, 0.0), (-0.5, 0.5, 0.0),
-            (0.5, 0.5, 0.0), (1.5, 0.5, 0.0),
+            (-1.5, -0.5, 0.0),
+            (-0.5, -0.5, 0.0),
+            (0.5, -0.5, 0.0),
+            (1.5, -0.5, 0.0),
+            (-1.5, 0.5, 0.0),
+            (-0.5, 0.5, 0.0),
+            (0.5, 0.5, 0.0),
+            (1.5, 0.5, 0.0),
         ),
         (),
         ((0, 4, 5, 1), (1, 5, 6, 2), (2, 6, 7, 3)),
@@ -1773,9 +1760,7 @@ def assert_target_mesh_connector() -> None:
     solid_target.select_set(True)
     solid_source.select_set(True)
     bpy.context.view_layer.objects.active = solid_source
-    solid_result = bpy.ops.object.quad_transition_build_target_connection(
-        distance=0.06
-    )
+    solid_result = bpy.ops.object.quad_transition_build_target_connection(distance=0.06)
     solid = bpy.context.active_object
     solid_bm = bmesh.new()
     try:
@@ -1795,18 +1780,14 @@ def assert_target_mesh_connector() -> None:
 
 def assert_detached_face_xray() -> None:
     clear_scene()
-    vertices = [
-        (float(x), float(y), 0.0) for y in range(3) for x in range(3)
-    ]
+    vertices = [(float(x), float(y), 0.0) for y in range(3) for x in range(3)]
     faces = [
         (0, 1, 4, 3),
         (1, 2, 5, 4),
         (3, 4, 7, 6),
         (4, 5, 8, 7),
     ]
-    vertices.extend(
-        ((0.8, 0.8, 0.04), (1.2, 0.8, 0.04), (1.0, 1.2, 0.04))
-    )
+    vertices.extend(((0.8, 0.8, 0.04), (1.2, 0.8, 0.04), (1.0, 1.2, 0.04)))
     faces.append((9, 10, 11))
     vertices.extend(
         (
@@ -1843,9 +1824,7 @@ def assert_detached_face_xray() -> None:
     ):
         raise AssertionError("Detached Face X-Ray did not identify both error regions")
 
-    step = bpy.ops.mesh.quad_transition_step_detached_faces(
-        direction=1, opacity=0.27
-    )
+    step = bpy.ops.mesh.quad_transition_step_detached_faces(direction=1, opacity=0.27)
     bm = bmesh.from_edit_mesh(mesh)
     selected = [face for face in bm.faces if face.select]
     if (
@@ -1875,8 +1854,7 @@ def assert_detached_face_xray() -> None:
         clean != {"FINISHED"}
         or settings.loose_xray_component_count != 0
         or settings.loose_xray_face_count != 0
-        or bpy.data.objects.get("Topology Transition Detached Face X-Ray")
-        is not None
+        or bpy.data.objects.get("Topology Transition Detached Face X-Ray") is not None
     ):
         raise AssertionError("Detached Face X-Ray did not reach a clean state")
     print(
@@ -1918,8 +1896,12 @@ def _directional_merge_normal_fixture(name: str):
     mesh = bpy.data.meshes.new(f"{name}_mesh")
     mesh.from_pydata(
         (
-            (0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0),
-            (0.0, 0.0, 0.02), (1.0, 0.0, 0.02), (0.0, 1.0, 0.02),
+            (0.0, 0.0, 0.0),
+            (1.0, 0.0, 0.0),
+            (0.0, 1.0, 0.0),
+            (0.0, 0.0, 0.02),
+            (1.0, 0.0, 0.02),
+            (0.0, 1.0, 0.02),
         ),
         (),
         ((0, 1, 2), (3, 4, 5)),
@@ -1976,9 +1958,7 @@ def _directional_merge_uv_fixture(name: str):
     face_id_name = "qt_uv_guard_test_face"
     bm.faces.layers.int.new(face_id_name)
     face_id_layer = bm.faces.layers.int.get(face_id_name)
-    uv_layers = {
-        name: bm.loops.layers.uv.get(name) for name in ("UVMap", "DetailUV")
-    }
+    uv_layers = {name: bm.loops.layers.uv.get(name) for name in ("UVMap", "DetailUV")}
     primary_values = (
         ((0.10, 0.10), (0.90, 0.90), (0.80, 0.80), (0.20, 0.20)),
         ((0.91, 0.91), (0.70, 0.90), (0.70, 0.70)),
@@ -2006,11 +1986,7 @@ def _directional_merge_uv_fixture(name: str):
                 loop_uv.pin_uv = (loop_number + layer_index) % 4 == 0
                 states[uv_name] = (
                     tuple(loop_uv.uv),
-                    (
-                        bool(loop_uv.select)
-                        if hasattr(loop_uv, "select")
-                        else None
-                    ),
+                    (bool(loop_uv.select) if hasattr(loop_uv, "select") else None),
                     (
                         bool(loop_uv.select_edge)
                         if hasattr(loop_uv, "select_edge")
@@ -2020,9 +1996,7 @@ def _directional_merge_uv_fixture(name: str):
                 )
             original_index = loop.vert.index
             final_index = 0 if original_index == 1 else original_index
-            final_coordinate = tuple(
-                float(value) for value in bm.verts[final_index].co
-            )
+            final_coordinate = tuple(float(value) for value in bm.verts[final_index].co)
             expected_groups.setdefault(final_coordinate, []).append(
                 (original_index, states)
             )
@@ -2047,11 +2021,7 @@ def _uv_loop_state(loop, uv_layers) -> dict[str, tuple]:
         result[name] = (
             tuple(loop_uv.uv),
             bool(loop_uv.select) if hasattr(loop_uv, "select") else None,
-            (
-                bool(loop_uv.select_edge)
-                if hasattr(loop_uv, "select_edge")
-                else None
-            ),
+            (bool(loop_uv.select_edge) if hasattr(loop_uv, "select_edge") else None),
             bool(loop_uv.pin_uv),
         )
     return result
@@ -2272,9 +2242,7 @@ def assert_directional_merge() -> None:
     ):
         raise AssertionError("View Away merge did not keep the deeper vertex")
 
-    viewport = _directional_merge_view_pair(
-        "DirectionalViewOperator", -1.0, -1.05
-    )
+    viewport = _directional_merge_view_pair("DirectionalViewOperator", -1.0, -1.05)
     screen = bpy.context.screen
     area = next(area for area in screen.areas if area.type == "VIEW_3D")
     region = next(region for region in area.regions if region.type == "WINDOW")
@@ -2282,9 +2250,7 @@ def assert_directional_merge() -> None:
     viewport_bm = bmesh.from_edit_mesh(viewport.data)
     expected = max(
         viewport_bm.verts,
-        key=lambda vertex: (
-            view_matrix @ (viewport.matrix_world @ vertex.co)
-        ).z,
+        key=lambda vertex: (view_matrix @ (viewport.matrix_world @ vertex.co)).z,
     ).co.copy()
     with bpy.context.temp_override(area=area, region=region):
         viewport_result = bpy.ops.mesh.quad_transition_directional_merge(
@@ -2387,7 +2353,12 @@ def assert_part_cages() -> dict:
 
 
 def assert_live_boolean_cleanup() -> dict:
-    from topology_transitions.boolean_ops import MODIFIER_NAME, clean_cut, face_counts
+    from topology_transitions.boolean_ops import (
+        MODIFIER_NAME,
+        clean_cut,
+        face_counts,
+        mark_original_faces,
+    )
 
     clear_scene()
     bpy.ops.mesh.primitive_cube_add(size=2.0)
@@ -2406,9 +2377,10 @@ def assert_live_boolean_cleanup() -> dict:
     bpy.ops.object.select_all(action="DESELECT")
     target.select_set(True)
     bpy.context.view_layer.objects.active = target
+    original = mark_original_faces(target)
     bpy.ops.object.modifier_apply(modifier=MODIFIER_NAME)
     cut = face_counts(target.data)
-    cleaned = clean_cut(bpy.context, target, cutter)
+    cleaned = clean_cut(bpy.context, target, original)
     final = face_counts(target.data)
     bm = bmesh.new()
     bm.from_mesh(target.data)

@@ -18,15 +18,16 @@ import bpy
 import gpu
 from bpy.types import Object, Operator, SpaceView3D
 from gpu_extras.batch import batch_for_shader
-from mathutils import Vector
+from mathutils.kdtree import KDTree
 
 from . import hud
 from .core import TransitionError
 
 MODIFIER_NAME = "TT Live Boolean"
+ORIGINAL_FACE = "tt_live_boolean_original"
+PROPAGATE_LIMIT = 6
 OPERATIONS = {"D": "DIFFERENCE", "U": "UNION", "I": "INTERSECT"}
 REFRESH_SECONDS = 0.12
-NEAR_CUT = 0.05  # faces within this fraction of the cutter's size count as the cut
 MAX_TINT_FACES = 20000
 
 
@@ -38,54 +39,101 @@ def face_counts(mesh: Any) -> dict[str, int]:
     return counts
 
 
-def _cut_box(cutter: Object) -> tuple[Vector, Vector]:
-    corners = [cutter.matrix_world @ Vector(c) for c in cutter.bound_box]
-    low = Vector(map(min, *corners))
-    high = Vector(map(max, *corners))
-    pad = (high - low).length * NEAR_CUT
-    return low - Vector((pad, pad, pad)), high + Vector((pad, pad, pad))
+def mark_original_faces(obj: Object) -> KDTree:
+    """Tag the mesh's own faces before the cut (faces from the cutter come
+    out of the Boolean without the tag) and remember its vertex positions
+    (vertices the cut creates are not among them)."""
+
+    layer = obj.data.attributes.get(ORIGINAL_FACE)
+    if layer is None:
+        layer = obj.data.attributes.new(ORIGINAL_FACE, "INT", "FACE")
+    layer.data.foreach_set("value", [1] * len(obj.data.polygons))
+    tree = KDTree(len(obj.data.vertices))
+    for index, vertex in enumerate(obj.data.vertices):
+        tree.insert(vertex.co, index)
+    tree.balance()
+    return tree
 
 
-def select_cut_faces(obj: Object, cutter: Object) -> int:
-    """In Edit Mode, select the non-quad faces touching the cutter's box."""
+def select_cut_faces(obj: Object, original: KDTree) -> int:
+    """In Edit Mode, select the non-quad faces the cut made: faces that came
+    from the cutter, and faces with a vertex the cut created."""
 
-    low, high = _cut_box(cutter)
-    matrix = obj.matrix_world
     bm = bmesh.from_edit_mesh(obj.data)
+    layer = bm.faces.layers.int.get(ORIGINAL_FACE)
+    if layer is None:
+        return 0
+    size = max(obj.dimensions) or 1.0
+    new = {vertex for vertex in bm.verts if original.find(vertex.co)[2] > size * 1.0e-6}
+    at_cut = {
+        face
+        for face in bm.faces
+        if face[layer] == 0 or any(vertex in new for vertex in face.verts)
+    }
     selected = 0
     for face in bm.faces:
-        near = len(face.verts) != 4 and any(
-            all(low[i] <= (matrix @ v.co)[i] <= high[i] for i in range(3))
-            for v in face.verts
-        )
-        face.select_set(near)
-        selected += near
+        pick = face in at_cut and len(face.verts) != 4
+        face.select_set(pick)
+        selected += pick
     bm.select_flush_mode()
     bmesh.update_edit_mesh(obj.data)
     return selected
 
 
-def clean_cut(context: Any, obj: Object, cutter: Object) -> dict[str, int]:
-    """Quad repair of the faces the cut made; returns what it solved."""
+def clean_cut(context: Any, obj: Object, original: KDTree) -> dict[str, int]:
+    """Quad repair of the faces the cut made; returns what it solved.
 
+    Local repairs run first. A repair that carries splits through the
+    surrounding quad rings is then kept only if it stays small (at most
+    PROPAGATE_LIMIT new quads per repaired face): otherwise a handful of faces
+    would be fixed by re-cutting much of the mesh.
+    """
+
+    from .edit_mesh import restore_bmesh
     from .repair_ops import solve_selected
 
     result = {"solved": 0, "created_quads": 0, "remaining": 0}
     bpy.ops.object.mode_set(mode="EDIT")
     try:
-        for target in ("NGONS", "TRIS"):
-            if not select_cut_faces(obj, cutter):
+        for target, propagate in (
+            ("NGONS", False),
+            ("TRIS", False),
+            ("NGONS", False),
+            ("NGONS", True),
+            ("TRIS", True),
+        ):
+            selected = select_cut_faces(obj, original)
+            if not selected:
                 continue
+            bm = bmesh.from_edit_mesh(obj.data)
+            backup = bm.copy()
             try:
-                stats = solve_selected(context, target)
+                stats = solve_selected(context, target, propagate=propagate)
+                if propagate and stats["created_quads"] > PROPAGATE_LIMIT * max(
+                    1, stats["solved"]
+                ):
+                    restore_bmesh(obj.data, bm, backup)
+                    continue
             except TransitionError:
                 continue
+            finally:
+                backup.free()
             result["solved"] += stats["solved"]
             result["created_quads"] += stats["created_quads"]
-        result["remaining"] = select_cut_faces(obj, cutter)
+        result["remaining"] = select_cut_faces(obj, original)
     finally:
         bpy.ops.object.mode_set(mode="OBJECT")
+        if ORIGINAL_FACE in obj.data.attributes:
+            obj.data.attributes.remove(obj.data.attributes[ORIGINAL_FACE])
     return result
+
+
+def open_edges(mesh: Any) -> int:
+    users: dict[tuple[int, int], int] = {}
+    for polygon in mesh.polygons:
+        for key in polygon.edge_keys:
+            users[key] = users.get(key, 0) + 1
+    return sum(1 for count in users.values() if count != 2)
 
 
 class QT_OT_live_boolean(Operator):
@@ -122,6 +170,7 @@ class QT_OT_live_boolean(Operator):
             self.report({"ERROR"}, "Live Boolean does not change shape-key meshes")
             return {"CANCELLED"}
         self._before = face_counts(self._target.data)
+        self._open = open_edges(self._target.data)
         modifier = self._target.modifiers.new(MODIFIER_NAME, "BOOLEAN")
         modifier.object = self._cutter
         modifier.operation = "DIFFERENCE"
@@ -225,12 +274,13 @@ class QT_OT_live_boolean(Operator):
             obj.select_set(False)
         target.select_set(True)
         context.view_layer.objects.active = target
+        original = mark_original_faces(target)
         with context.temp_override(object=target, active_object=target):
             bpy.ops.object.modifier_apply(modifier=MODIFIER_NAME)
         after_cut = face_counts(target.data)
         self._restore_cutter()
         cutter.hide_set(True)
-        cleaned = clean_cut(context, target, cutter)
+        cleaned = clean_cut(context, target, original)
         final = face_counts(target.data)
         self.report(
             {"INFO"},
@@ -291,6 +341,16 @@ class QT_OT_live_boolean(Operator):
                 )
             ],
             [("Move, rotate or scale the cutter; the cut follows live.", hud.MUTED)],
+            *(
+                [
+                    [
+                        ("chip", hud.CORAL, f"{self._open} open/over edges"),
+                        ("Booleans need a closed mesh: run Auto Solve first.", hud.INK),
+                    ]
+                ]
+                if self._open
+                else []
+            ),
             [
                 ("key", "D"),
                 ("difference", hud.MUTED),

@@ -231,7 +231,87 @@ def main():
             "non_quads": sum(1 for f in bm.faces if len(f.verts) != 4),
         }
 
+    def part_cages():
+        from topology_transitions.part_cage_ops import PartCagePlan, high_poly_tree
+
+        edit(source)
+        bpy.ops.object.mode_set(mode="OBJECT")
+        # A stand-in high-poly: the mesh subdivided and pushed out a little.
+        high = source.copy()
+        high.data = source.data.copy()
+        bpy.context.collection.objects.link(high)
+        corners = [Vector(c) for c in source.bound_box]
+        size = (Vector(map(max, *corners)) - Vector(map(min, *corners))).length
+        subdivide = high.modifiers.new("sub", "SUBSURF")
+        subdivide.levels = 1
+        push = high.modifiers.new("push", "DISPLACE")
+        push.strength = size * 0.01
+        plan = PartCagePlan(source, size * 0.02)
+        plan.fit(high_poly_tree(bpy.context, [high]))
+        plan.check_overlaps()
+        bpy.data.objects.remove(high)
+        distances = sorted(plan.distances)
+        return {
+            "parts": len(plan.parts),
+            "clashing_pairs": len(plan.clashes),
+            "distance_min_max": [round(distances[0], 4), round(distances[-1], 4)],
+        }
+
+    def live_boolean():
+        from topology_transitions.boolean_ops import (
+            MODIFIER_NAME,
+            clean_cut,
+            face_counts,
+            mark_original_faces,
+        )
+
+        edit(source)
+        bpy.ops.object.mode_set(mode="OBJECT")
+        work = source.copy()
+        work.data = source.data.copy()
+        bpy.context.collection.objects.link(work)
+        corners = [work.matrix_world @ Vector(c) for c in work.bound_box]
+        low, high = Vector(map(min, *corners)), Vector(map(max, *corners))
+        size = high - low
+        bpy.ops.mesh.primitive_cylinder_add(
+            vertices=12,
+            radius=min(size.x, size.z) * 0.15,
+            depth=size.y * 3,
+            location=(low + high) / 2,
+            rotation=(1.5708, 0.0, 0.0),
+        )
+        cutter = bpy.context.active_object
+        modifier = work.modifiers.new(MODIFIER_NAME, "BOOLEAN")
+        modifier.object = cutter
+        bpy.ops.object.select_all(action="DESELECT")
+        work.select_set(True)
+        bpy.context.view_layer.objects.active = work
+        before = face_counts(work.data)
+        original = mark_original_faces(work)
+        bpy.ops.object.modifier_apply(modifier=MODIFIER_NAME)
+        cut = face_counts(work.data)
+        cleaned = clean_cut(bpy.context, work, original)
+        final = face_counts(work.data)
+        edit(work)
+        detail = {
+            "new_nonquads": cut["tris"]
+            + cut["ngons"]
+            - before["tris"]
+            - before["ngons"],
+            "cleaned_into_quads": cleaned["created_quads"],
+            "left_at_cut": cleaned["remaining"],
+            "over_edges": nonmanifold_edges(work),
+        }
+        del final
+        bpy.ops.object.mode_set(mode="OBJECT")
+        bpy.data.objects.remove(work)
+        bpy.data.objects.remove(cutter)
+        bpy.context.view_layer.objects.active = source
+        return detail
+
     for name, function in (
+        ("part_cages", part_cages),
+        ("live_boolean", live_boolean),
         ("manifold", manifold),
         ("lens", lens),
         ("detached", detached),

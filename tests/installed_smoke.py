@@ -115,15 +115,8 @@ def create_surface_paint_fixture():
     bpy.context.collection.objects.link(target)
 
     mesh = bpy.data.meshes.new("installed_paint_mesh")
-    vertices = [
-        (float(x), float(y), 0.5)
-        for y in range(2)
-        for x in range(lanes + 1)
-    ]
-    faces = [
-        (x, x + 1, lanes + x + 2, lanes + x + 1)
-        for x in range(lanes)
-    ]
+    vertices = [(float(x), float(y), 0.5) for y in range(2) for x in range(lanes + 1)]
+    faces = [(x, x + 1, lanes + x + 2, lanes + x + 1) for x in range(lanes)]
     mesh.from_pydata(vertices, (), faces)
     mesh.update()
     low = bpy.data.objects.new("InstalledPaintLow", mesh)
@@ -138,9 +131,7 @@ def create_surface_paint_fixture():
     for face in bm.faces:
         face.select_set(False)
     for edge in bm.edges:
-        edge.select_set(
-            all(abs(vertex.co.y - 1.0) < 1.0e-6 for vertex in edge.verts)
-        )
+        edge.select_set(all(abs(vertex.co.y - 1.0) < 1.0e-6 for vertex in edge.verts))
     bm.select_flush_mode()
     bmesh.update_edit_mesh(mesh, loop_triangles=True, destructive=False)
     return low, target
@@ -151,8 +142,7 @@ def create_connector_fixture():
     bpy.ops.object.select_all(action="DESELECT")
     source_mesh = bpy.data.meshes.new("installed_connector_source_mesh")
     source_mesh.from_pydata(
-        ((-0.5, -0.5, 0.04), (0.5, -0.5, 0.04),
-         (0.5, 0.5, 0.04), (-0.5, 0.5, 0.04)),
+        ((-0.5, -0.5, 0.04), (0.5, -0.5, 0.04), (0.5, 0.5, 0.04), (-0.5, 0.5, 0.04)),
         (),
         ((0, 1, 2, 3),),
     )
@@ -161,8 +151,7 @@ def create_connector_fixture():
     bpy.context.collection.objects.link(source)
     target_mesh = bpy.data.meshes.new("installed_connector_target_mesh")
     target_mesh.from_pydata(
-        ((-0.5, -0.5, 0.0), (0.5, -0.5, 0.0),
-         (0.5, 0.5, 0.0), (-0.5, 0.5, 0.0)),
+        ((-0.5, -0.5, 0.0), (0.5, -0.5, 0.0), (0.5, 0.5, 0.0), (-0.5, 0.5, 0.0)),
         (),
         ((0, 3, 2, 1),),
     )
@@ -180,9 +169,15 @@ def create_detached_xray_fixture():
     mesh = bpy.data.meshes.new("installed_detached_xray_mesh")
     mesh.from_pydata(
         (
-            (0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (2.0, 0.0, 0.0),
-            (0.0, 1.0, 0.0), (1.0, 1.0, 0.0), (2.0, 1.0, 0.0),
-            (0.8, 0.3, 0.03), (1.2, 0.3, 0.03), (1.0, 0.7, 0.03),
+            (0.0, 0.0, 0.0),
+            (1.0, 0.0, 0.0),
+            (2.0, 0.0, 0.0),
+            (0.0, 1.0, 0.0),
+            (1.0, 1.0, 0.0),
+            (2.0, 1.0, 0.0),
+            (0.8, 0.3, 0.03),
+            (1.2, 0.3, 0.03),
+            (1.0, 0.7, 0.03),
         ),
         (),
         ((0, 1, 4, 3), (1, 2, 5, 4), (6, 7, 8)),
@@ -330,9 +325,7 @@ def main() -> None:
             for face in single_selected
         )
     ):
-        raise AssertionError(
-            f"Installed single-quad insertion failed: {single_result}"
-        )
+        raise AssertionError(f"Installed single-quad insertion failed: {single_result}")
     bpy.ops.object.mode_set(mode="OBJECT")
     single.select_set(False)
     bpy.context.view_layer.objects.active = obj
@@ -385,9 +378,7 @@ def main() -> None:
     bpy.ops.object.select_all(action="SELECT")
     bpy.ops.object.delete(use_global=False)
     optimize_mesh = bpy.data.meshes.new("installed_optimize_mesh")
-    optimize_vertices = [
-        (float(x), float(y), 0.0) for y in range(5) for x in range(5)
-    ]
+    optimize_vertices = [(float(x), float(y), 0.0) for y in range(5) for x in range(5)]
     optimize_faces = []
     for y in range(4):
         for x in range(4):
@@ -468,12 +459,8 @@ def main() -> None:
         raise AssertionError("Installed target connector failed")
 
     detached = create_detached_xray_fixture()
-    detached_result = bpy.ops.mesh.quad_transition_inspect_detached_faces(
-        opacity=0.3
-    )
-    detached_overlay = bpy.data.objects.get(
-        "Topology Transition Detached Face X-Ray"
-    )
+    detached_result = bpy.ops.mesh.quad_transition_inspect_detached_faces(opacity=0.3)
+    detached_overlay = bpy.data.objects.get("Topology Transition Detached Face X-Ray")
     if (
         detached_result != {"FINISHED"}
         or settings.loose_xray_component_count != 1

@@ -93,9 +93,7 @@ class SurfaceWorkflowSmoke(unittest.TestCase):
         self.assertFalse(directional["modifier"].use_project_x)
         self.assertFalse(directional["modifier"].use_project_y)
 
-        cage_result = surface_ops.toggle_bake_cage(
-            bpy.context, self.low, distance=0.05
-        )
+        cage_result = surface_ops.toggle_bake_cage(bpy.context, self.low, distance=0.05)
         cage = cage_result["cage"]
         inspection = surface_ops.inspect_bake_cage(self.low, cage)
         self.assertTrue(inspection.topology_matches)
@@ -140,18 +138,16 @@ class SurfaceWorkflowSmoke(unittest.TestCase):
         self.assertEqual(ray_configured["mode"], "max ray distance")
 
     def test_stale_cage_is_detected_and_rebuilt(self) -> None:
-        cage = surface_ops.toggle_bake_cage(
-            bpy.context, self.low, distance=0.03
-        )["cage"]
+        cage = surface_ops.toggle_bake_cage(bpy.context, self.low, distance=0.03)[
+            "cage"
+        ]
         self.low.data.vertices.add(1)
         self.low.data.update()
         stale = surface_ops.inspect_bake_cage(self.low, cage)
         self.assertEqual(stale.state, "STALE")
         self.assertFalse(stale.topology_matches)
 
-        rebuilt = surface_ops.toggle_bake_cage(
-            bpy.context, self.low, distance=0.03
-        )
+        rebuilt = surface_ops.toggle_bake_cage(bpy.context, self.low, distance=0.03)
         self.assertEqual(rebuilt["state"], "rebuilt")
         self.assertTrue(
             surface_ops.inspect_bake_cage(self.low, rebuilt["cage"]).topology_matches

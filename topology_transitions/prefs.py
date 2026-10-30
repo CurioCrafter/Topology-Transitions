@@ -6,7 +6,6 @@ defaults when the add-on was registered without its preferences (tests,
 scripts that import the package directly).
 """
 
-
 from types import SimpleNamespace
 
 import bpy

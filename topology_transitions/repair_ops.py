@@ -965,7 +965,12 @@ def solve_all_nonmanifold(
         working.free()
 
 
-def solve_selected(context: Any, target: str) -> dict[str, Any]:
+def solve_selected(
+    context: Any, target: str, *, propagate: bool = True
+) -> dict[str, Any]:
+    """Repair the selected tris or n-gons; ``propagate`` allows carrying
+    splits through surrounding quad rings when no local repair exists."""
+
     _obj, mesh, bm = _validate_context(context)
     bm.faces.ensure_lookup_table()
     bm.faces.index_update()
@@ -1035,7 +1040,7 @@ def solve_selected(context: Any, target: str) -> dict[str, Any]:
         remaining = [
             face for face in target_faces if face.is_valid and face not in used
         ]
-        if remaining:
+        if remaining and propagate:
             new_faces, affected_quads, split_edges = _propagated_grid(bm, remaining)
             created.extend(new_faces)
             used.update(remaining)

@@ -135,8 +135,14 @@ class PartCagePlan:
                 if normal.length_squared == 0.0:
                     continue
                 location, _n, _i, distance = tree.ray_cast(point, normal, size * 0.5)
-                if location is not None:
-                    deepest = max(deepest, distance)
+                if location is None:
+                    continue
+                # A flipped normal sends the ray through the part to its far
+                # side; no real offset is more than twice the nearest one.
+                near = tree.find_nearest(point, distance)[3]
+                if near is not None:
+                    distance = min(distance, 2.0 * near)
+                deepest = max(deepest, distance)
             self.distances[part] = max(
                 deepest * FIT_MARGIN + size * FIT_PAD, size * MIN_FRACTION
             )
@@ -149,39 +155,65 @@ class PartCagePlan:
             )
         ]
 
+    def _local(self, part: int) -> tuple[list[int], list[list[int]]]:
+        faces = [self.polygons[index] for index in self.part_polygons[part]]
+        used = sorted({v for face in faces for v in face}) or [0]
+        remap = {v: i for i, v in enumerate(used)}
+        return used, [[remap[v] for v in face] for face in faces]
+
+    def _cage(self, part: int):
+        """Cage BVH and box of one part, rebuilt only when its distance changed."""
+
+        distance = self.distances[part]
+        cached = self._cages.get(part)
+        if cached is not None and cached[0] == distance:
+            return cached[1], cached[2]
+        used, local = self._local(part)
+        points = [self.points[v] + self.normals[v] * distance for v in used]
+        tree = BVHTree.FromPolygons(points, local)
+        box = (Vector(map(min, *points)), Vector(map(max, *points)))
+        self._cages[part] = (distance, tree, box)
+        return tree, box
+
+    def _bare(self, part: int) -> BVHTree:
+        if part not in self._bares:
+            used, local = self._local(part)
+            self._bares[part] = BVHTree.FromPolygons(
+                [self.points[v] for v in used], local
+            )
+        return self._bares[part]
+
     def check_overlaps(self) -> None:
         """Faces of one part's cage that cut into another part's cage, where
-        the low-poly parts themselves do not already touch."""
+        the low-poly parts themselves do not already touch. Results are kept
+        per pair of parts, so resizing one part only rechecks its pairs."""
 
-        cage = self.cage_points()
-        trees, bare, boxes = [], [], []
-        for polygons in self.part_polygons:
-            faces = [self.polygons[index] for index in polygons]
-            used = sorted({v for face in faces for v in face}) or [0]
-            remap = {v: i for i, v in enumerate(used)}
-            local = [[remap[v] for v in face] for face in faces]
-            trees.append(BVHTree.FromPolygons([cage[v] for v in used], local))
-            bare.append(BVHTree.FromPolygons([self.points[v] for v in used], local))
-            points = [cage[v] for v in used]
-            boxes.append((Vector(map(min, *points)), Vector(map(max, *points))))
+        if not hasattr(self, "_cages"):
+            self._cages, self._bares, self._pairs = {}, {}, {}
+        cages = [self._cage(part) for part in range(len(self.parts))]
         self.overlapping, self.clashes = set(), []
         for a in range(len(self.parts)):
+            tree_a, (low_a, high_a) = cages[a]
             for b in range(a + 1, len(self.parts)):
-                (low_a, high_a), (low_b, high_b) = boxes[a], boxes[b]
+                tree_b, (low_b, high_b) = cages[b]
                 if any(
                     low_a[axis] > high_b[axis] or low_b[axis] > high_a[axis]
                     for axis in range(3)
                 ):
                     continue
-                pairs = trees[a].overlap(trees[b])
-                if not pairs:
-                    continue
-                touching = set(bare[a].overlap(bare[b]))
-                new = [pair for pair in pairs if pair not in touching]
-                if not new:
+                key = (self.distances[a], self.distances[b])
+                cached = self._pairs.get((a, b))
+                if cached is None or cached[0] != key:
+                    pairs = tree_a.overlap(tree_b)
+                    if pairs:
+                        touching = set(self._bare(a).overlap(self._bare(b)))
+                        pairs = [pair for pair in pairs if pair not in touching]
+                    cached = (key, pairs)
+                    self._pairs[(a, b)] = cached
+                if not cached[1]:
                     continue
                 self.clashes.append((a, b))
-                for face_a, face_b in new:
+                for face_a, face_b in cached[1]:
                     self.overlapping.add(self.part_polygons[a][face_a])
                     self.overlapping.add(self.part_polygons[b][face_b])
 
