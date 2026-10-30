@@ -40,9 +40,8 @@ ARGS = sys.argv[sys.argv.index("--") + 1 :]
 MESH, SHOT, OUT = Path(ARGS[0]), ARGS[1], Path(ARGS[2])
 INFO: dict = {"mesh": MESH.name, "shot": SHOT}
 
-for panel in ui.CLASSES:
-    panel.bl_category = "Item"
 topology_transitions.register()
+ui.set_tab("Item")  # the screenshot shows the panels in the first tab
 # Animated view moves (Auto Solve focuses its result) would undo the framing.
 bpy.context.preferences.view.smooth_view = 0
 instances = {}

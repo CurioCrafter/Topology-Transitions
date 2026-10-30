@@ -540,9 +540,7 @@ class QT_OT_surface_paint(Operator):
                 ],
             )
         )
-        hud.draw_card(
-            hud.left_margin(self._area), 24.0, "Surface Paint", hud.TEAL, rows
-        )
+        hud.draw_corner_card(self._area, self._region, "Surface Paint", hud.TEAL, rows)
         if self._mouse is not None:
             shader = gpu.shader.from_builtin("UNIFORM_COLOR")
             x, y = self._mouse

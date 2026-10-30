@@ -10,8 +10,11 @@ from collections.abc import Sequence
 from math import cos, pi, sin
 
 import blf
+import bpy
 import gpu
 from gpu_extras.batch import batch_for_shader
+
+from . import prefs
 
 Color = tuple[float, float, float, float]
 
@@ -38,6 +41,12 @@ LINE = 21.0
 # or ("key", text); keys are drawn as light key caps.
 Run = tuple
 Row = Sequence[Run]
+
+
+def scale() -> float:
+    """Card size: the add-on preference times Blender's resolution scale."""
+
+    return prefs.get().card_scale * bpy.context.preferences.system.ui_scale
 
 
 def left_margin(area) -> float:
@@ -89,39 +98,53 @@ def _text(x: float, y: float, text: str, color: Color, size: float) -> float:
     return blf.dimensions(FONT, text)[0]
 
 
-def _run_width(run: Run, size: float) -> float:
+def _run_width(run: Run, size: float, k: float) -> float:
     blf.size(FONT, size)
     kind = run[0] if run[0] in {"chip", "key"} else "text"
     if kind == "text":
         return blf.dimensions(FONT, run[0])[0]
     label = run[2] if kind == "chip" else run[1]
-    return blf.dimensions(FONT, label)[0] + 14.0
+    return blf.dimensions(FONT, label)[0] + 14.0 * k
 
 
-def row_width(row: Row, size: float = TEXT_SIZE) -> float:
-    return sum(_run_width(run, size) + 6.0 for run in row)
+def row_width(row: Row, k: float = 1.0) -> float:
+    return sum(_run_width(run, TEXT_SIZE * k, k) + 6.0 * k for run in row)
 
 
-def draw_row(x: float, y: float, row: Row, size: float = TEXT_SIZE) -> None:
+def draw_row(x: float, y: float, row: Row, k: float = 1.0) -> None:
+    size = TEXT_SIZE * k
     for run in row:
         if run[0] == "chip":
             _kind, color, label = run
-            width = _run_width(run, size)
-            rounded_rect(x, y - 5.0, width, 19.0, 8.0, color)
-            _text(x + 7.0, y, label, KEY_INK, size)
+            width = _run_width(run, size, k)
+            rounded_rect(x, y - 5.0 * k, width, 19.0 * k, 8.0 * k, color)
+            _text(x + 7.0 * k, y, label, KEY_INK, size)
         elif run[0] == "key":
-            width = _run_width(run, size)
-            rounded_rect(x, y - 5.0, width, 19.0, 4.0, KEYCAP)
-            _text(x + 7.0, y, run[1], KEY_INK, size)
+            width = _run_width(run, size, k)
+            rounded_rect(x, y - 5.0 * k, width, 19.0 * k, 4.0 * k, KEYCAP)
+            _text(x + 7.0 * k, y, run[1], KEY_INK, size)
         else:
             width = _text(x, y, run[0], run[1], size)
-        x += width + 6.0
+        x += width + 6.0 * k
 
 
-def measure_card(title: str, rows: Sequence[Row]) -> tuple[float, float]:
-    blf.size(FONT, TITLE_SIZE)
-    width = max([blf.dimensions(FONT, title)[0]] + [row_width(row) for row in rows])
-    return width + 2.0 * PAD + 6.0, PAD * 2.0 + 26.0 + LINE * len(rows)
+def _visible_rows(rows: Sequence[Row]) -> list[Row]:
+    if prefs.get().card_key_hints:
+        return list(rows)
+    return [row for row in rows if not any(run[0] == "key" for run in row)]
+
+
+def measure_card(
+    title: str, rows: Sequence[Row], *, min_width: float = 0.0
+) -> tuple[float, float]:
+    k = scale()
+    rows = _visible_rows(rows)
+    blf.size(FONT, TITLE_SIZE * k)
+    width = max(
+        [min_width * k, blf.dimensions(FONT, title)[0]]
+        + [row_width(r, k) for r in rows]
+    )
+    return width + (2.0 * PAD + 6.0) * k, (PAD * 2.0 + 26.0 + LINE * len(rows)) * k
 
 
 def draw_card(
@@ -135,24 +158,39 @@ def draw_card(
 ) -> tuple[float, float]:
     """Draw a card with its bottom-left corner at (x, y); returns (w, h)."""
 
-    blf.size(FONT, TITLE_SIZE)
-    width = (
-        max(
-            [min_width, blf.dimensions(FONT, title)[0]]
-            + [row_width(row) for row in rows]
-        )
-        + 2.0 * PAD
-        + 6.0
-    )
-    height = PAD * 2.0 + 26.0 + LINE * len(rows)
+    k = scale()
+    width, height = measure_card(title, rows, min_width=min_width)
+    rows = _visible_rows(rows)
+    panel = (*PANEL[:3], prefs.get().card_opacity)
     gpu.state.blend_set("ALPHA")
     try:
-        rounded_rect(x, y, width, height, 10.0, PANEL)
-        rounded_rect(x, y, 6.0, height, 3.0, accent)
-        top = y + height - PAD - 15.0
-        _text(x + PAD + 6.0, top, title, accent, TITLE_SIZE)
+        rounded_rect(x, y, width, height, 10.0 * k, panel)
+        rounded_rect(x, y, 6.0 * k, height, 3.0 * k, accent)
+        inset = (PAD + 6.0) * k
+        top = y + height - (PAD + 15.0) * k
+        _text(x + inset, top, title, accent, TITLE_SIZE * k)
         for index, row in enumerate(rows):
-            draw_row(x + PAD + 6.0, top - 28.0 - index * LINE, row)
+            draw_row(x + inset, top - (28.0 + index * LINE) * k, row, k)
     finally:
         gpu.state.blend_set("NONE")
     return width, height
+
+
+def draw_corner_card(area, region, title: str, accent: Color, rows) -> None:
+    """A tool's coach card in the corner chosen in the preferences."""
+
+    settings = prefs.get()
+    if not settings.show_cards:
+        return
+    width, height = measure_card(title, rows)
+    corner = settings.card_corner
+    if corner.endswith("LEFT"):
+        x = left_margin(area)
+    else:
+        x = visible_right(area, region) - width
+    # The top clears the view's header text; the top right also the gizmo.
+    if corner.startswith("BOTTOM"):
+        y = 24.0
+    else:
+        y = region.height - height - (170.0 if corner == "TOP_RIGHT" else 56.0)
+    draw_card(max(8.0, x), max(8.0, y), title, accent, rows)

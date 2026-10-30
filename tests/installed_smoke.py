@@ -276,6 +276,20 @@ def main() -> None:
             f"manifest expects {expected_version}"
         )
 
+    from topology_transitions import ui
+
+    addon_prefs = bpy.context.preferences.addons["topology_transitions"].preferences
+    addon_prefs.sidebar_tab = "Tool"
+    addon_prefs.show_paint = False
+    if (
+        ui.QT_PT_inspect.bl_category != "Tool"
+        or not ui.QT_PT_inspect.is_registered
+        or ui.QT_PT_paint.poll(bpy.context)
+    ):
+        raise AssertionError("Add-on preferences did not move or hide the panels")
+    addon_prefs.sidebar_tab = "Quad Transition"
+    addon_prefs.show_paint = True
+
     obj = create_patch()
     validation = bpy.ops.mesh.quad_transition_validate(transition="THREE_TO_ONE")
     if validation != {"FINISHED"}:

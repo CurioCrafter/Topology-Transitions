@@ -19,7 +19,7 @@ from bpy_extras import view3d_utils
 from gpu_extras.batch import batch_for_shader
 from mathutils import Vector
 
-from . import hud
+from . import hud, prefs
 
 MAX_VERTS = 200000
 HOVER_PIXELS = 18.0
@@ -293,23 +293,24 @@ class QT_OT_topology_lens(Operator):
         try:
             gpu.state.blend_set("ALPHA")
             gpu.state.depth_test_set("LESS_EQUAL")
+            settings = prefs.get()
             for tris, color in (
                 (snapshot["tris"], (*hud.AMBER[:3], 0.3)),
                 (snapshot["ngons"], (*hud.CORAL[:3], 0.35)),
             ):
-                if tris:
+                if tris and settings.lens_tint_faces:
                     fill.bind()
                     fill.uniform_float("color", color)
                     batch_for_shader(fill, "TRIS", {"pos": tris}).draw(fill)
             if positions:
-                gpu.state.point_size_set(11.0)
+                gpu.state.point_size_set(settings.lens_dot_size)
                 batch_for_shader(
                     points, "POINTS", {"pos": positions, "color": colors}
                 ).draw(points)
             hovered = self._hovered()
             if hovered is not None:
                 gpu.state.depth_test_set("NONE")
-                gpu.state.point_size_set(18.0)
+                gpu.state.point_size_set(settings.lens_dot_size * 1.6)
                 batch_for_shader(
                     points,
                     "POINTS",
@@ -350,9 +351,9 @@ class QT_OT_topology_lens(Operator):
             return
         obj = bpy.context.edit_object
         if obj is not None and len(obj.data.vertices) > MAX_VERTS:
-            hud.draw_card(
-                hud.left_margin(self._area),
-                24.0,
+            hud.draw_corner_card(
+                self._area,
+                self._region,
                 "Topology Lens",
                 hud.CORAL,
                 [[(f"Paused: more than {MAX_VERTS} vertices.", hud.INK)]],
@@ -384,9 +385,9 @@ class QT_OT_topology_lens(Operator):
                 ("or the Lens button turns it off; keep editing meanwhile", hud.MUTED),
             ],
         ]
-        hud.draw_card(hud.left_margin(self._area), 24.0, "Topology Lens", hud.SKY, rows)
+        hud.draw_corner_card(self._area, self._region, "Topology Lens", hud.SKY, rows)
         hovered = self._hovered()
-        if hovered is None or self._mouse is None:
+        if hovered is None or self._mouse is None or not prefs.get().lens_hover_card:
             return
         color, title, explanation, tip = KINDS[hovered[1]]
         valence = hovered[4]

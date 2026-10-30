@@ -511,9 +511,8 @@ def guarded(callback):
 
 
 def setup() -> float:
-    for panel in ui_module.CLASSES:
-        panel.bl_category = "Item"
     topology_transitions.register()
+    ui_module.set_tab("Item")  # the screenshot shows the panels in the first tab
     maximize_view()
     if ARGS.shot == "before":
         setup_transition(apply=False)

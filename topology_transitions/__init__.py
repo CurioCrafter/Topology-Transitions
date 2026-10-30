@@ -27,6 +27,7 @@ def register() -> None:
         manifold_ops,
         operators,
         optimize_ops,
+        prefs,
         properties,
         repair_ops,
         surface_ops,
@@ -35,6 +36,7 @@ def register() -> None:
         ui,
     )
 
+    prefs.register()
     properties.register()
     operators.register()
     repair_ops.register()
@@ -65,6 +67,7 @@ def unregister() -> None:
         manifold_ops,
         operators,
         optimize_ops,
+        prefs,
         properties,
         repair_ops,
         surface_ops,
@@ -89,6 +92,7 @@ def unregister() -> None:
     repair_ops.unregister()
     operators.unregister()
     properties.unregister()
+    prefs.unregister()
 
 
 if __name__ == "__main__":

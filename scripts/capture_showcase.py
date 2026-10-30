@@ -41,9 +41,8 @@ NAMES = {
     "sidebar": "12-sidebar.png",
 }
 
-for panel in ui.CLASSES:
-    panel.bl_category = "Item"
 topology_transitions.register()
+ui.set_tab("Item")  # the screenshot shows the panels in the first tab
 for name in ("VIEW3D_PT_transform",):
     if hasattr(bpy.types, name):
         bpy.utils.unregister_class(getattr(bpy.types, name))

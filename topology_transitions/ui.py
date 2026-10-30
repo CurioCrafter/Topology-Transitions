@@ -1,10 +1,20 @@
 """3D View sidebar UI: a Start Here card plus coloured, collapsible
 sections (Inspect, Surface Paint, Transitions, Repair, Flow, Cleanup,
-Bake). Each section header carries its own colour swatch."""
+Bake). Each section header carries its own colour swatch. The tab name, the
+sections shown and the beginner hints come from the add-on preferences."""
 
 from __future__ import annotations
 
 from bpy.types import Panel
+
+from . import prefs
+
+
+def _hint(layout, text: str, icon: str = "NONE") -> None:
+    """An explanation line, hidden when Beginner Hints are off."""
+
+    if prefs.get().show_hints:
+        layout.label(text=text, icon=icon)
 
 
 def _copy_operator_settings(
@@ -30,7 +40,7 @@ def _copy_operator_settings(
 def _draw_mesh_integrity(layout, settings, *, edit_mode: bool) -> None:
     integrity = layout.box()
     integrity.label(text="Mesh Integrity", icon="SHADING_WIRE")
-    integrity.label(text="Find holes and topological manifold defects")
+    _hint(integrity, "Find holes and topological manifold defects")
     integrity.operator(
         "mesh.quad_transition_check_manifold",
         text="Find Holes / Check Manifold",
@@ -77,9 +87,9 @@ def _draw_mesh_integrity(layout, settings, *, edit_mode: bool) -> None:
         text="Auto Solve All Non-Manifold Areas",
         icon="MOD_REMESH",
     )
-    integrity.label(text="Split seams are welded, not capped")
-    integrity.label(text="Even holes use the quickest quad fan")
-    integrity.label(text="Triangular holes become three quad flows")
+    _hint(integrity, "Split seams are welded, not capped")
+    _hint(integrity, "Even holes use the quickest quad fan")
+    _hint(integrity, "Triangular holes become three quad flows")
 
 
 def _paint_button(layout, settings, text: str = "Start Surface Paint") -> None:
@@ -108,6 +118,9 @@ def _draw_start_here(layout, context, settings) -> None:
     from .lens_ops import QT_OT_topology_lens
 
     edit_mode = context.mode == "EDIT_MESH"
+    if not prefs.get().show_start_here:
+        _draw_compact_start(layout, settings, QT_OT_topology_lens.running)
+        return
     card = layout.box()
     card.label(text="Start Here", icon="COLLECTION_COLOR_05")
     big = card.column(align=True)
@@ -127,8 +140,28 @@ def _draw_start_here(layout, context, settings) -> None:
     steps = card.column(align=True)
     _step(steps, edit_mode, "Edit Mode on the low-poly mesh")
     _step(steps, settings.surface_target is not None, "Surface Target picked")
-    tip = card.row()
-    tip.label(text="Lens dots: amber 3, magenta 5, red 6+", icon="LIGHT")
+    _hint(card, "Lens dots: amber 3, magenta 5, red 6+", "LIGHT")
+
+
+def _draw_compact_start(layout, settings, lens_on: bool) -> None:
+    row = layout.row(align=True)
+    row.scale_y = 1.2
+    row.operator(
+        "mesh.quad_transition_check_manifold", text="Holes", icon="SHADING_WIRE"
+    )
+    row.operator(
+        "mesh.quad_transition_topology_lens",
+        text="Lens",
+        icon="HIDE_OFF" if lens_on else "VIEWZOOM",
+        depress=lens_on,
+    )
+    _paint_button(row, settings, "Paint")
+
+
+def _open_preferences(layout) -> None:
+    layout.operator(
+        "preferences.addon_show", text="", icon="PREFERENCES", emboss=False
+    ).module = prefs.ADDON
 
 
 class QT_PT_sidebar(Panel):
@@ -142,6 +175,9 @@ class QT_PT_sidebar(Panel):
     def poll(cls, _context):
         return True
 
+    def draw_header_preset(self, _context):
+        _open_preferences(self.layout)
+
     def draw(self, context):
         settings = context.scene.topology_transitions
         _draw_start_here(self.layout, context, settings)
@@ -152,11 +188,17 @@ class _Child(Panel):
     bl_region_type = "UI"
     bl_category = "Quad Transition"
     bl_parent_id = "QT_PT_sidebar"
+    section = ""
+
+    @classmethod
+    def poll(cls, _context):
+        return getattr(prefs.get(), f"show_{cls.section}", True)
 
 
 class QT_PT_inspect(_Child):
     bl_label = "Inspect"
     bl_idname = "QT_PT_inspect"
+    section = "inspect"
 
     def draw_header(self, _context):
         self.layout.label(icon="COLLECTION_COLOR_05")
@@ -171,7 +213,7 @@ class QT_PT_inspect(_Child):
         )
         detached = layout.box()
         detached.label(text="Detached Face X-Ray")
-        detached.label(text="Edit Mode: checks islands inside one mesh")
+        _hint(detached, "Edit Mode: checks islands inside one mesh")
         detached.prop(settings, "loose_xray_opacity", slider=True)
         inspect_detached = detached.operator(
             "mesh.quad_transition_inspect_detached_faces",
@@ -211,6 +253,7 @@ class QT_PT_inspect(_Child):
 class QT_PT_paint(_Child):
     bl_label = "Surface Paint"
     bl_idname = "QT_PT_paint"
+    section = "paint"
 
     def draw_header(self, _context):
         self.layout.label(icon="COLLECTION_COLOR_04")
@@ -218,8 +261,8 @@ class QT_PT_paint(_Child):
     def draw(self, context):
         layout = self.layout
         settings = context.scene.topology_transitions
-        layout.label(text="Paint where quads should go.", icon="BRUSH_DATA")
-        layout.label(text="Stroke direction = edge-loop direction.")
+        _hint(layout, "Paint where quads should go.", "BRUSH_DATA")
+        _hint(layout, "Stroke direction = edge-loop direction.")
         if settings.surface_target is None:
             warn = layout.row()
             warn.alert = True
@@ -239,12 +282,13 @@ class QT_PT_paint(_Child):
         big.scale_y = 1.5
         big.enabled = settings.surface_target is not None
         _paint_button(big, settings)
-        layout.label(text="Ctrl erase | X mirror | J join | Enter", icon="INFO")
+        _hint(layout, "Ctrl erase | X mirror | J join | Enter", "INFO")
 
 
 class QT_PT_transitions(_Child):
     bl_label = "Transitions"
     bl_idname = "QT_PT_transitions"
+    section = "transitions"
     bl_options = {"DEFAULT_CLOSED"}
 
     def draw_header(self, _context):
@@ -255,9 +299,9 @@ class QT_PT_transitions(_Child):
         settings = context.scene.topology_transitions
         selection = layout.box()
         selection.label(text="1. Select one quad, a patch, or its boundary")
-        selection.label(text="One quad places only the transition core")
-        selection.label(text="Larger patches use the true four-sided boundary")
-        selection.label(text="Make an incoming boundary edge active if needed")
+        _hint(selection, "One quad places only the transition core")
+        _hint(selection, "Larger patches use the true four-sided boundary")
+        _hint(selection, "Make an incoming boundary edge active if needed")
 
         pattern = layout.box()
         pattern.label(text="2. Choose the transition")
@@ -312,6 +356,7 @@ class QT_PT_transitions(_Child):
 class QT_PT_repair(_Child):
     bl_label = "Repair & Optimize"
     bl_idname = "QT_PT_repair"
+    section = "repair"
     bl_options = {"DEFAULT_CLOSED"}
 
     def draw_header(self, _context):
@@ -322,7 +367,7 @@ class QT_PT_repair(_Child):
         settings = context.scene.topology_transitions
         repair = layout.box()
         repair.label(text="Topology Repair")
-        repair.label(text="Select non-quad faces in Edit Mode")
+        _hint(repair, "Select non-quad faces in Edit Mode")
         repair.operator(
             "mesh.quad_transition_solve_selected_tris",
             text="Solve Selected Tris",
@@ -333,12 +378,12 @@ class QT_PT_repair(_Child):
             text="Solve Selected N-gons",
             icon="FACESEL",
         )
-        repair.label(text="Local pairs are preferred automatically", icon="INFO")
-        repair.label(text="Isolated faces carry splits through quad rings")
+        _hint(repair, "Local pairs are preferred automatically", "INFO")
+        _hint(repair, "Isolated faces carry splits through quad rings")
 
         optimize = layout.box()
         optimize.label(text="Quad Flow Optimization")
-        optimize.label(text="Remove repetitive remesher edge loops")
+        _hint(optimize, "Remove repetitive remesher edge loops")
         optimize.prop(settings, "optimize_sensitivity", text="Detection")
         optimize.prop(settings, "optimize_scope", text="")
         optimize.prop(settings, "optimize_cycles")
@@ -422,6 +467,7 @@ class QT_PT_repair(_Child):
 class QT_PT_flow(_Child):
     bl_label = "Flow Browser"
     bl_idname = "QT_PT_flow"
+    section = "flow"
     bl_options = {"DEFAULT_CLOSED"}
 
     def draw_header(self, _context):
@@ -432,7 +478,7 @@ class QT_PT_flow(_Child):
         settings = context.scene.topology_transitions
         flow = layout.box()
         flow.label(text="Quad Flow Scroll")
-        flow.label(text="Browse whole pole-bounded quad regions")
+        _hint(flow, "Browse whole pole-bounded quad regions")
         flow.prop(settings, "flow_mode", text="")
         row = flow.row(align=True)
         row.prop(settings, "flow_scope", text="")
@@ -481,6 +527,7 @@ class QT_PT_flow(_Child):
 class QT_PT_cleanup(_Child):
     bl_label = "Merge & Cleanup"
     bl_idname = "QT_PT_cleanup"
+    section = "cleanup"
     bl_options = {"DEFAULT_CLOSED"}
 
     def draw_header(self, _context):
@@ -491,7 +538,7 @@ class QT_PT_cleanup(_Child):
         settings = context.scene.topology_transitions
         merge = layout.box()
         merge.label(text="Directional Merge")
-        merge.label(text="Edit Mode: select close vertices")
+        _hint(merge, "Edit Mode: select close vertices")
         merge.prop(settings, "directional_merge_distance", slider=True)
         merge.prop(settings, "directional_merge_scope", text="")
         merge.prop(settings, "directional_merge_skip_connected")
@@ -560,7 +607,7 @@ class QT_PT_cleanup(_Child):
 
         directional = layout.box()
         directional.label(text="Directional Face Delete")
-        directional.label(text="Object Mode: selected mesh objects")
+        _hint(directional, "Object Mode: selected mesh objects")
         row = directional.row(align=True)
         for axis, text in (("POS_X", "+X"), ("NEG_X", "-X"), ("POS_Y", "+Y")):
             operator = row.operator(
@@ -584,8 +631,8 @@ class QT_PT_cleanup(_Child):
 
         connector = layout.box()
         connector.label(text="Target Mesh Connector")
-        connector.label(text="Select contact faces on the active mesh")
-        connector.label(text="Object Mode: select it plus one target")
+        _hint(connector, "Select contact faces on the active mesh")
+        _hint(connector, "Object Mode: select it plus one target")
         connector.prop(settings, "target_connect_distance", slider=True)
         connector.prop(settings, "target_connect_opacity", slider=True)
         row = connector.row(align=True)
@@ -614,6 +661,7 @@ class QT_PT_cleanup(_Child):
 class QT_PT_bake(_Child):
     bl_label = "Surface & Bake"
     bl_idname = "QT_PT_bake"
+    section = "bake"
     bl_options = {"DEFAULT_CLOSED"}
 
     def draw_header(self, _context):
@@ -705,8 +753,8 @@ class QT_PT_bake(_Child):
             "topology_transitions_bake_status", "Bake readiness not inspected"
         )
         surface.label(text=str(bake_status), icon="INFO")
-        surface.label(text="Green = sampled hit; red = miss (diagnostic)")
-        surface.label(text="Configuration never starts or overwrites a bake")
+        _hint(surface, "Green = sampled hit; red = miss (diagnostic)")
+        _hint(surface, "Configuration never starts or overwrites a bake")
 
 
 CLASSES = (
@@ -721,10 +769,25 @@ CLASSES = (
 )
 
 
+def set_tab(name: str) -> None:
+    """Move every panel to the sidebar tab ``name`` (re-registers them)."""
+
+    from bpy.utils import register_class, unregister_class
+
+    for cls in reversed(CLASSES):
+        if cls.is_registered:
+            unregister_class(cls)
+    for cls in CLASSES:
+        cls.bl_category = name
+        register_class(cls)
+
+
 def register() -> None:
     from bpy.utils import register_class
 
+    tab = prefs.get().sidebar_tab.strip() or prefs.DEFAULT_TAB
     for cls in CLASSES:
+        cls.bl_category = tab
         register_class(cls)
 
 

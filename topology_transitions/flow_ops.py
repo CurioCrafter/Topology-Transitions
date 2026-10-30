@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from math import sqrt
 from typing import Any
 
-import blf
 import bmesh
 import bpy
 import gpu
@@ -15,6 +14,7 @@ from bpy.props import BoolProperty, IntProperty
 from bpy.types import Operator, SpaceView3D
 from gpu_extras.batch import batch_for_shader
 
+from . import hud
 from .quad_flows import (
     MeshQuadTopology,
     QuadFlow,
@@ -496,15 +496,15 @@ class QT_OT_edge_flow_scroll(Operator):
                 "Wheel/Arrows browse + focus | Enter select band | "
                 "S select & stay | F focus | N neighbors | Esc cancel",
             ]
-        font_id = 0
-        blf.size(font_id, 16.0)
-        blf.enable(font_id, blf.SHADOW)
-        blf.shadow(font_id, 3, 0.0, 0.0, 0.0, 0.9)
-        blf.color(font_id, 1.0, 1.0, 1.0, 1.0)
-        for line_index, line in enumerate(lines):
-            blf.position(font_id, 56.0, 149.0 - line_index * 21.0, 0.0)
-            blf.draw(font_id, line)
-        blf.disable(font_id, blf.SHADOW)
+        title, *body, keys = lines
+        region = next(r for r in self._area.regions if r.type == "WINDOW")
+        hud.draw_corner_card(
+            self._area,
+            region,
+            title.title(),
+            hud.VIOLET,
+            [*([(line, hud.INK)] for line in body), [(keys, hud.MUTED)]],
+        )
 
     def _redraw(self) -> None:
         if self._area is not None:
