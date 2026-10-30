@@ -354,7 +354,7 @@ class QT_PT_transitions(_Child):
 
 
 class QT_PT_repair(_Child):
-    bl_label = "Repair & Optimize"
+    bl_label = "Repair & Modify"
     bl_idname = "QT_PT_repair"
     section = "repair"
     bl_options = {"DEFAULT_CLOSED"}
@@ -365,6 +365,18 @@ class QT_PT_repair(_Child):
     def draw(self, context):
         layout = self.layout
         settings = context.scene.topology_transitions
+        boolean = layout.box()
+        boolean.label(text="Live Boolean", icon="MOD_BOOLEAN")
+        _hint(boolean, "Object Mode: select the cutter, then the mesh")
+        row = boolean.row()
+        row.scale_y = 1.3
+        row.operator(
+            "object.quad_transition_live_boolean",
+            text="Start Live Boolean",
+            icon="MOD_BOOLEAN",
+        )
+        _hint(boolean, "Move the cutter; tris and n-gons it makes show live")
+        _hint(boolean, "Enter applies, then repairs the cut into quads")
         repair = layout.box()
         repair.label(text="Topology Repair")
         _hint(repair, "Select non-quad faces in Edit Mode")
@@ -670,6 +682,19 @@ class QT_PT_bake(_Child):
     def draw(self, context):
         layout = self.layout
         settings = context.scene.topology_transitions
+        cages = layout.box()
+        cages.label(text="Part Cages", icon="MOD_SOLIDIFY")
+        _hint(cages, "Object Mode: select high-poly, then the low-poly")
+        row = cages.row()
+        row.scale_y = 1.3
+        row.operator(
+            "object.quad_transition_part_cages",
+            text="Fit Cage per Part",
+            icon="MOD_SOLIDIFY",
+        )
+        _hint(cages, "Each loose part gets its own cage distance;")
+        _hint(cages, "red = a cage runs into another part")
+
         surface = layout.box()
         surface.label(text="Surface Conform & Bake Preview")
         surface.prop(settings, "shrinkwrap_method", text="")

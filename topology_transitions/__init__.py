@@ -18,6 +18,7 @@ bl_info = {
 def register() -> None:
     from . import (
         bake_preview_ops,
+        boolean_ops,
         direction_delete_ops,
         directional_merge_ops,
         examples,
@@ -27,6 +28,7 @@ def register() -> None:
         manifold_ops,
         operators,
         optimize_ops,
+        part_cage_ops,
         prefs,
         properties,
         repair_ops,
@@ -49,6 +51,8 @@ def register() -> None:
     surface_ops.register()
     surface_paint_ops.register()
     bake_preview_ops.register()
+    part_cage_ops.register()
+    boolean_ops.register()
     direction_delete_ops.register()
     directional_merge_ops.register()
     target_connect_ops.register()
@@ -58,6 +62,7 @@ def register() -> None:
 def unregister() -> None:
     from . import (
         bake_preview_ops,
+        boolean_ops,
         direction_delete_ops,
         directional_merge_ops,
         examples,
@@ -67,6 +72,7 @@ def unregister() -> None:
         manifold_ops,
         operators,
         optimize_ops,
+        part_cage_ops,
         prefs,
         properties,
         repair_ops,
@@ -81,6 +87,8 @@ def unregister() -> None:
     loose_xray_ops.unregister()
     target_connect_ops.unregister()
     direction_delete_ops.unregister()
+    boolean_ops.unregister()
+    part_cage_ops.unregister()
     bake_preview_ops.unregister()
     surface_paint_ops.unregister()
     surface_ops.unregister()

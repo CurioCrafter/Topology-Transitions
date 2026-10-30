@@ -19,7 +19,7 @@ SECTIONS = (
     ("inspect", "Inspect"),
     ("paint", "Surface Paint"),
     ("transitions", "Transitions"),
-    ("repair", "Repair & Optimize"),
+    ("repair", "Repair & Modify"),
     ("flow", "Flow Browser"),
     ("cleanup", "Merge & Cleanup"),
     ("bake", "Surface & Bake"),
@@ -63,7 +63,7 @@ class QT_AddonPreferences(AddonPreferences):
     show_inspect: BoolProperty(name="Inspect", default=True)
     show_paint: BoolProperty(name="Surface Paint", default=True)
     show_transitions: BoolProperty(name="Transitions", default=True)
-    show_repair: BoolProperty(name="Repair & Optimize", default=True)
+    show_repair: BoolProperty(name="Repair & Modify", default=True)
     show_flow: BoolProperty(name="Flow Browser", default=True)
     show_cleanup: BoolProperty(name="Merge & Cleanup", default=True)
     show_bake: BoolProperty(name="Surface & Bake", default=True)

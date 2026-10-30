@@ -2330,6 +2330,103 @@ def assert_directional_merge() -> None:
     )
 
 
+def assert_part_cages() -> dict:
+    from topology_transitions.part_cage_ops import (
+        PART_DISTANCES_KEY,
+        PartCagePlan,
+        high_poly_tree,
+        write_part_cage,
+    )
+    from topology_transitions.surface_ops import find_bake_cage, inspect_bake_cage
+
+    clear_scene()
+    # Two low-poly boxes 0.3 apart; the right one's high-poly bulges far more.
+    for x, scale, name in ((0.0, 1.04, "HighA"), (1.3, 1.5, "HighB")):
+        bpy.ops.mesh.primitive_cube_add(size=1.0, location=(x, 0, 0))
+        bpy.context.active_object.scale = (scale, scale, scale)
+        bpy.context.active_object.name = name
+    bpy.ops.mesh.primitive_cube_add(size=1.0, location=(0, 0, 0))
+    first = bpy.context.active_object
+    bpy.ops.mesh.primitive_cube_add(size=1.0, location=(1.3, 0, 0))
+    second = bpy.context.active_object
+    bpy.ops.object.select_all(action="DESELECT")
+    first.select_set(True)
+    second.select_set(True)
+    bpy.context.view_layer.objects.active = first
+    bpy.ops.object.join()
+    low = bpy.context.active_object
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+    highs = [bpy.data.objects["HighA"], bpy.data.objects["HighB"]]
+    plan = PartCagePlan(low, 0.05)
+    plan.fit(high_poly_tree(bpy.context, highs))
+    plan.check_overlaps()
+    left, right = sorted(range(2), key=lambda p: plan.points[plan.parts[p][0]].x)
+    if (
+        len(plan.parts) != 2
+        or not plan.distances[right] > 3 * plan.distances[left]
+        or (min(left, right), max(left, right)) not in plan.clashes
+        or not plan.overlapping
+    ):
+        raise AssertionError(
+            f"Part cages did not fit per part or flag the clash: "
+            f"{plan.distances} {plan.clashes}"
+        )
+    fitted = list(plan.distances)
+    plan.distances[right] = plan.distances[left]
+    plan.check_overlaps()
+    if plan.clashes:
+        raise AssertionError("Equal small part cages should not clash")
+    cage = write_part_cage(bpy.context, plan)
+    if (
+        find_bake_cage(low) is not cage
+        or not inspect_bake_cage(low, cage).ready
+        or len(json.loads(cage[PART_DISTANCES_KEY])) != 2
+    ):
+        raise AssertionError("Part cage was not written as a ready bake cage")
+    return {"fitted": [round(d, 3) for d in fitted]}
+
+
+def assert_live_boolean_cleanup() -> dict:
+    from topology_transitions.boolean_ops import MODIFIER_NAME, clean_cut, face_counts
+
+    clear_scene()
+    bpy.ops.mesh.primitive_cube_add(size=2.0)
+    target = bpy.context.active_object
+    subdivide = target.modifiers.new("grid", "SUBSURF")
+    subdivide.subdivision_type = "SIMPLE"
+    subdivide.levels = 2
+    bpy.ops.object.modifier_apply(modifier="grid")
+    bpy.ops.mesh.primitive_cylinder_add(
+        vertices=8, radius=0.35, depth=3.0, rotation=(0.0, 1.5708, 0.0)
+    )
+    cutter = bpy.context.active_object
+    boolean = target.modifiers.new(MODIFIER_NAME, "BOOLEAN")
+    boolean.object = cutter
+    boolean.operation = "DIFFERENCE"
+    bpy.ops.object.select_all(action="DESELECT")
+    target.select_set(True)
+    bpy.context.view_layer.objects.active = target
+    bpy.ops.object.modifier_apply(modifier=MODIFIER_NAME)
+    cut = face_counts(target.data)
+    cleaned = clean_cut(bpy.context, target, cutter)
+    final = face_counts(target.data)
+    bm = bmesh.new()
+    bm.from_mesh(target.data)
+    over = sum(1 for edge in bm.edges if len(edge.link_faces) > 2)
+    bm.free()
+    if (
+        cut["tris"] + cut["ngons"] == 0
+        or cleaned["solved"] == 0
+        or final["tris"] + final["ngons"] >= cut["tris"] + cut["ngons"]
+        or over
+    ):
+        raise AssertionError(f"Live Boolean cleanup failed: {cut} {cleaned} {final}")
+    return {
+        "cut_nonquads": cut["tris"] + cut["ngons"],
+        "left": final["tris"] + final["ngons"],
+    }
+
+
 def main() -> None:
     topology_transitions.register()
     try:
@@ -2361,13 +2458,16 @@ def main() -> None:
         assert_external_projection_target()
         assert_invalid_selection_is_unchanged()
         assert_shape_key_is_unchanged()
+        cages = assert_part_cages()
+        cut = assert_live_boolean_cleanup()
+        print(f"QT_NEW_TOOLS_PASS part_cages={cages} live_boolean={cut}")
         print(
             "QT_BLENDER_SMOKE_PASS patterns=13 single_quad=10 rejection_cases=2 "
             "preview=1 external_projection=1 quad_flow=3 example_atlas=1 "
             "repair=6 boundary_input=2 manifold=5 auto_manifold=6 optimize=9 "
             "directional_delete=7 "
             "target_connector=2 detached_xray=1 directional_merge=12 "
-            "surface_paint=2"
+            "surface_paint=2 part_cages=1 live_boolean=1"
         )
     finally:
         clear_scene()
