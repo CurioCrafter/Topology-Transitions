@@ -53,15 +53,33 @@ quad topology and edge flow.
 | 🔵 | **Topology Lens** | A live overlay: amber dots are 3-poles, magenta 5-poles, red 6+ poles and doublets; triangles and n-gons are tinted. Hover any dot to learn what it does to edge flow. You keep editing while it is on. |
 | 🟢 | **Surface Paint** | Paint where quads should go. A grid that walks over creases fills the paint, separate strokes join with transitions, and Mirror X paints both halves. |
 | 🩷 | **Transitions** | Replace a quad patch with an all-quad 5 -> 3, 3 -> 5, 3 -> 1, 1 -> 3, 4 -> 2, 2 -> 4, 1 -> 2 or 2 -> 1 transition. |
-| 🟠 | **Repair & Optimize** | Turn selected tris and n-gons into quads; remove repetitive remesher loops without creating triangles. |
+| 🟠 | **Repair & Modify** | **Live Boolean** cuts with a live tri/n-gon count, then repairs the cut into quads; turn selected tris and n-gons into quads; remove repetitive remesher loops without creating triangles. |
 | 🟣 | **Flow Browser** | Scroll through pole-bounded quad regions to read how a mesh flows. |
 | 🟡 | **Merge & Cleanup** | Directional merge, delete faces by axis, and connect two meshes. |
-| 🔴 | **Surface & Bake** | Live Shrinkwrap, exact bake cages, and a ray preview before you bake. |
+| 🔴 | **Surface & Bake** | **Part Cages** gives every separate part its own bake-cage distance and shows clashes live; Shrinkwrap, exact bake cages, and a ray preview before you bake. |
 
 Each colour matches a collapsible section of the sidebar, so the panel stays
-short: open only the step you are on.
+short: open only the step you are on. Every section, the hints, the tab name
+and the viewport cards can be hidden or adjusted: see
+[Make it yours](#make-it-yours).
 
 ## What's new
+
+**0.12** adds live tools for changing topology and baking multi-part meshes,
+and makes the whole interface adjustable:
+
+- **Live Boolean**: cut, join or intersect with another mesh while you move
+  it. The card counts the triangles and n-gons the cut makes and tints them on
+  the mesh; Enter applies the cut and repairs the faces at the cut into quads,
+  without re-cutting the rest of the mesh.
+- **Part Cages**: every separate part of a low-poly mesh (straps, buckles,
+  plates) gets its own bake-cage distance, fitted to the high-poly. Each cage
+  is drawn in its own colour, and faces where one part's cage runs into
+  another part's are red, so you see bake bleed before you bake.
+- **Make it yours**: rename or merge the sidebar tab, hide the sections you do
+  not use, switch off the beginner hints for a compact panel, and move, resize,
+  fade or hide the viewport cards. The gear in the panel header opens these
+  settings.
 
 **0.11** makes the tools hold up on real production meshes:
 
@@ -165,6 +183,15 @@ borders), and a low-poly game model.
 | Low-poly game creature (DAE), 2k tris | 639 | 0 | 0.1 s |
 | Game armour (FBX), 1.7k faces | 214 | 104 (open borders kept) | 0.2 s |
 
+The new live tools were run on the same meshes (high-poly stand-in: the
+mesh subdivided and pushed out 1%; cutter: a cylinder through the middle):
+
+| Mesh | Part Cages | Live Boolean |
+| --- | --- | --- |
+| Game armour (FBX) | 4 parts fitted in 0.5 s | 51 cut faces, 38 quads made, nothing over-connected |
+| Game boots (FBX) | 46 parts fitted in 1.9 s | 12 cut faces, 22 quads made, nothing over-connected |
+| Low-poly game creature (DAE) | 71 parts fitted in 3.9 s | open mesh: the card warns before the cut |
+
 No tool left an over-connected edge behind, Surface Paint built 130 to 380
 quads on each, and tools that do not apply to a mesh (for example the quad
 optimizer on a triangle mesh) refuse with a clear message instead of changing
@@ -257,6 +284,67 @@ painted area there gets its own patch. Very rough surfaces, such as rock scans
 with crevices smaller than one quad, still come out as several patches: use a
 larger brush with a larger cell there, or paint smoother areas first. How the grid is built is described in
 [docs/SURFACE_PAINT_AND_BAKING.md](docs/SURFACE_PAINT_AND_BAKING.md).
+
+## Live Boolean
+
+Cut a mesh and see what the cut does to its topology before you commit:
+
+1. In Object Mode, select the cutter, then the mesh to cut (active).
+2. **Repair & Modify -> Start Live Boolean**.
+3. Move, rotate or scale the cutter as usual: the cut follows live, and the
+   card counts quads, triangles and n-gons against the mesh before the cut.
+   The faces the cut makes are tinted.
+4. **Enter** applies the cut and repairs the faces at the cut: n-gons and
+   triangles become quads where a local repair exists, and a repair that
+   carries splits through neighbouring quad rings is only kept when it stays
+   small. The cutter is hidden afterwards. **Esc** removes the cut again.
+
+![Live Boolean cutting a cylinder through a game armour mesh, with the live face counts](docs/images/16-live-boolean.png)
+
+| Key | Action |
+| --- | --- |
+| D / U / I | Difference / Union / Intersect |
+| Enter | Apply and repair the cut into quads |
+| Esc | Cancel and remove the cut |
+
+Booleans need a closed mesh: when the mesh has open or over-connected edges
+the card says so; run **Find Holes** and **Auto Solve** first for a clean cut.
+
+## Part Cages
+
+A low-poly game asset is often one mesh made of many separate parts. One cage
+distance for all of them is too small for the bulky parts or so large that a
+thin part's cage swallows its neighbour, and the bake then picks up the wrong
+surface. **Part Cages** gives every part its own distance:
+
+1. In Object Mode, make the low-poly mesh active and select the high-poly
+   object(s), or pick the high-poly as **Surface Target**.
+2. **Surface & Bake -> Fit Cage per Part**. Each part's cage is fitted to how
+   far the high-poly surface lies outside it, and drawn in its own colour.
+3. Red faces show where one part's cage runs into another part's cage (parts
+   that already touch in the low-poly are ignored). **Tab** picks a part, **-**
+   and **=** shrink or grow its cage (**Shift**: every part), **A** fits again.
+4. **Enter** writes the cage as the normal, topology-locked bake cage, so
+   **Configure Bake** uses it as is.
+
+![Part Cages on game boots: each part's cage in its own colour, clashes in red](docs/images/17-part-cages.png)
+
+Red that cannot be fixed by resizing (a strap lying flat on a boot) means
+those parts should be baked separately or moved apart for the bake.
+
+## Make it yours
+
+Open **Edit -> Preferences -> Add-ons -> Topology Transitions**, or click the
+gear in the panel header:
+
+- **Sidebar Tab**: rename the tab, or type an existing tab name (for example
+  `Tool` or `Edit`) to merge the panels into it.
+- **Start Here Card**: turn off for a compact row of the three main buttons.
+- **Beginner Hints**: turn off to hide the explanation lines under buttons.
+- **Sections**: show or hide each coloured section.
+- **Coach Cards**: on/off, corner, size (on top of Blender's resolution
+  scale), background opacity, and whether the key-cap rows show.
+- **Topology Lens**: dot size, the hover card, and the triangle/n-gon tint.
 
 ## Surface conformity and bake preview
 

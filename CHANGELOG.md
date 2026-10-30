@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.12.0 - 2026-10-29
+
+- **Live Boolean** (Repair & Modify): cut, join or intersect the active mesh
+  with the other selected mesh while you move it; the card counts the tris and
+  n-gons the cut makes and tints them. Enter applies the cut and repairs the
+  faces at the cut into quads (local repairs first; a repair that carries
+  splits through quad rings is kept only if it adds at most 6 quads per
+  repaired face). Warns when the mesh has open or over-connected edges.
+- **Part Cages** (Surface & Bake): a bake cage with its own distance for every
+  loose part, fitted to the selected high-poly or the Surface Target by casting
+  along each vertex normal (capped at twice the nearest distance for flipped
+  normals). Live viewer with a colour per part and red where one part's cage
+  runs into another's; writes the normal topology-locked bake cage.
+- **Add-on preferences**: sidebar tab name, Start Here card or a compact row,
+  Beginner Hints, show/hide per section, coach-card corner/size/opacity/key
+  rows, Lens dot size, hover card and face tint. A gear in the panel header
+  opens them.
+- "Repair & Optimize" is now "Repair & Modify". The Flow Browser uses the same
+  coach card as the other tools.
+- `solve_selected` takes `propagate=False` for local-only repairs.
+- Tests: smoke tests for both new tools and the preferences (installed copy);
+  `real_mesh_stress.py` runs them on your meshes; `capture_real_mesh.py` has
+  `cages` and `boolean` shots.
+
 ## 0.11.0 - 2026-10-28
 
 - **Auto Solve welds split seams.** glTF exports and AI scans split vertices

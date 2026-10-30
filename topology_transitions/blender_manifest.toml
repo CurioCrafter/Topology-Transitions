@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "topology_transitions"
-version = "0.11.0"
+version = "0.12.0"
 name = "Topology Transitions"
 tagline = "Find holes, paint, repair, and optimize quad topology"
 maintainer = "CurioCrafter"
